@@ -51,6 +51,7 @@ public class ChannelController {
 		String payway = bean.getPayway();
 		String unno = bean.getUnno();
 		
+		//test
 		BigDecimal amount = null;
 		try{
 			amount = new BigDecimal(bean.getAmount());
