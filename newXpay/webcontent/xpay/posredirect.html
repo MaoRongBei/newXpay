@@ -1,0 +1,66 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>支付</title>
+<style>
+* {
+	margin: 0;
+	padding: 0;
+}
+body{
+	background-color:#B3B4B8;
+}
+
+</style>
+<script src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
+
+<script type="text/javascript">
+	var LocString = String(window.document.location.href);
+
+	function GetQueryString(str) {
+		var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+				.exec(LocString), tmp;
+		if (rs)
+			return rs[2];
+		else
+			return rs;
+	}
+	var orderid = GetQueryString("orderid");
+
+	function post(url, data, callback) {
+		var xmlhttp;
+		if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		} else {// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				callback(xmlhttp.responseText);
+			}
+		}
+		xmlhttp.open("POST", url, true);
+		xmlhttp.setRequestHeader("Content-Type","application/json");
+		xmlhttp.send(data);
+	}
+	
+	function getPayUrl() {
+		post("posgetpayurlxxx_"+orderid,'',function(resp){
+			if (resp.indexOf("http")>-1) {
+				window.location.assign(resp);
+			} else{
+				document.write(resp);
+				alert(resp);
+			}
+		});
+	}
+</script>
+</head>
+
+<body onload="getPayUrl()">
+	下单中......请稍等.
+</body>
+</html>

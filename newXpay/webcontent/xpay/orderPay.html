@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link href="http://10.51.130.148:9080/css/loading.css" rel="stylesheet">
+<title>订单支付</title>
+<style type="text/css">
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-size: 14px;
+	background-color: #f2f2f2;
+	color: #333;
+}
+
+input {
+	box-sizing: border-box;
+	-webkit-box-sizing: border-box;
+	-webkit-appearance: none;
+	border: 0;
+	outline: none;
+	height: 38px;
+}
+
+*:focus {
+	outline: none;
+}
+
+header, section {
+	background-color: #fff;
+	padding: 10px 15px;
+	border-top: 1px solid #ebeced;
+	border-bottom: 1px solid #ebeced;
+}
+
+header {
+	border-top: 0;
+}
+
+header p {
+	line-height: 30px;
+}
+
+section {
+	margin-top: 15px;
+	padding: 0 15px;
+}
+
+section ul {
+	list-style: none;
+}
+
+ul li {
+	border-bottom: solid 1px #f5f5f6;
+	height: 40px;
+	line-height: 40px;
+}
+
+#orderNum {
+	color: #f08a46;
+}
+
+.item-color {
+	color: #7f7f7f;
+}
+
+.item-left {
+	width: 25%;
+	display: inline-block;
+	text-align: justify;
+}
+
+.item-right {
+	width: 73%;
+	display: inline-block;
+	font-size: 14px;
+}
+
+button {
+	width: 90%;
+	background-color: #328cf4;
+	display: block;
+	margin: 80px auto 0;
+	height: 44px;
+	border-radius: 3px;
+	font-size: 16px;
+	color: #fff;
+	border: 0;
+}
+</style>
+</head>
+<body>
+	<header>
+		<p>
+			订单金额：<span id="orderNum">500.00</span>元
+		</p>
+		<p>
+			商户名称：<span id="accName">平安支付</span>
+		</p>
+	</header>
+	<section>
+		<ul>
+			<li>
+				<p class="item-left" id="bankName">招商银行</p>
+				<span class="item-right" style="padding-left: 6px;"><span id="accNo">625810******6484</span></span>
+			</li>
+			<li><label class="item-left">CVN2</label> 
+			<input id="cvn"class="item-right" type="tel" maxlength="3" name="" placeholder="卡背面末三位"></li>
+			<li style="border: 0;"><label class="item-left">有效期</label> 
+			<input id="effective" class="item-right" type="tel" maxlength="4" name=""placeholder="示例：09/15，输入0915"></li>
+		</ul>
+		<input type="hidden"   id="fiid" value="11"/>
+		<input type="hidden"   id="mid" value="22"/>
+		<input type="hidden"   id="qpcid" value="333"/>
+	</section>
+	<button onclick="submitOrderPay(this)">确认支付</button>
+	<div id="loadingToast" style="display:none;font-size:14px;">
+    <div class="weui-mask_transparent"></div>
+    <div class="weui-toast">
+        <i class="weui-loading weui-icon_toast"></i>
+        <p class="weui-toast__content">数据加载中</p>
+    </div>
+</div>
+	<script>
+	
+		/**var btn =document.querySelector("button");
+		btn.addEventListener("click",function(){
+			var _this=this;
+			submitOrderPay(_this);
+		});*/
+		   /* var accNo=staus.get("accNo");
+			var accName=staus.get("accName");
+			var bankName=staus.get("bankName");
+			var fiid=staus.get("fiid");
+			var mid=staus.get("mid");
+			var qpcid=staus.get("qpcid");
+			var amount=staus.get("amount");
+			document.querySelector("#fiid").value=fiid;
+			document.querySelector("#mid").value=mid;
+			document.querySelector("#qpcid").value=qpcid;
+			document.getElementById("accNo").innerText=accNo;
+			document.getElementById("orderNum").innerText=amount;
+			document.getElementById("bankName").innerText=bankName;
+			document.getElementById("accName").innerText=accName;*/
+		function submitOrderPay(_this) {
+			setTimeout("alert('请求超时！');hidenLoading();location.href='retuenMainApp';", 30000 );
+			showLoading();
+			//POST请求的方法写这里
+			var cvn = document.querySelector("#cvn").value;
+			var effective = document.querySelector("#effective").value;
+			if (cvn === '' || cvn.length !== 3) {
+				alert("请正确填写CVN2");
+				return
+
+			}
+			if (effective === '' || effective.length !== 4) {
+				alert("请正确填写有效期");
+				return
+
+			}
+			_this.style.cssText = "background-color:#ccc;";
+			_this.innerHTML = "提交中···"
+			_this.setAttribute("disabled", "disabled");
+			_post();
+			//		var err ="?status=err";
+			//	location.href="orderPayCus.html"+err;
+		}
+		function _post() {
+			/* var fiid = document.querySelector("#fiid").value;
+			var mid = document.querySelector("#mid").value;
+			var qpcid = document.querySelector("#qpcid").value;
+			var accNo = document.getElementById("accNo").innerText;
+			var amount = document.getElementById("orderNum").innerText;
+			var bankName = document.getElementById("bankName").innerText;
+			var json;
+			var params = "fiid=" + fiid + "&mid=" + mid + "&qpcid=" + qpcid
+					+ "&accNo=" + accNo + "&amount=" + amount + "&bankName="
+					+ bankName;*/
+			var request = new XMLHttpRequest();
+			request.open('POST', 'setpayinfo',
+					true);
+			request.setRequestHeader('Content-Type',
+					'application/x-www-form-urlencoded');
+			request.onreadystatechange = function(data) {
+				if (request.readyState == XMLHttpRequest.DONE
+						&& request.status == 200) {
+					hidenLoading();
+					console.log(data.target.response);
+					/*json = JSON.parse(request.responseText);
+					var err = "?status=" + json.htnlStatus + "&amount="
+							+ json.amount + "&accNo=" + json.accNo
+							+ "&accName=" + json.accName + "&orderTime="
+							+ json.orderTime + "&orderId=" + json.orderId
+							+ "&msg=" + json.msg;
+					location.href = "orderPayCus.html"
+							+ err;*/
+					
+				} else {
+					hidenLoading() ;
+					console.log("Request was unsuccessful: " + request.status)
+				}
+			};
+		//	request.send(params);
+			
+		}
+		function hidenLoading() {
+			document.querySelector("#loadingToast").style.cssText="display:none";
+		}
+
+		function showLoading() {
+			document.querySelector("#loadingToast").style.cssText="display:block";
+		}
+	</script>
+</body>
+</html>

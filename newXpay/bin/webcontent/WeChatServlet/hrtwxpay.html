@@ -1,0 +1,406 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>微信支付</title>
+<link rel="stylesheet"
+	href="http://cdn.bootcss.com/weui/0.4.3/style/weui.css">
+<style>
+* {
+	margin: 0;
+	padding: 0;
+}
+
+/*input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+	-webkit-appearance: none !important;
+	appearance: none !important;
+	margin: 0;
+}*/
+html {
+	font-size: 62.5%;
+}
+
+body {
+	background-color: #fff;
+	font-family: "微软雅黑";
+	background-color: #F9F9F9;
+}
+
+.header {
+	background-color: #fe6732;
+	box-shadow: 1px 1px 3px #795E5E;
+}
+
+.header a {
+	float: left;
+}
+
+.header img {
+	height: 2.5rem;
+	margin-top: 1rem;
+}
+
+.header h3 {
+	margin-left: 38%;
+	font-size: 2rem;
+	line-height: 5rem;
+	/*text-align: center;*/
+	color: #020202;
+}
+
+.main {
+	margin: 10px;
+}
+
+.main li {
+	list-style: none;
+}
+
+.main li:first-child {
+	text-align: center;
+	font-size: 1.8rem;
+	color: #303030;
+}
+
+.main li:last-child {
+	border: none;
+	font-size: 1.6rem;
+	padding-left: 1rem;
+	line-height: 6rem;
+	background-color: #fff;
+}
+
+.main li h4 {
+	font-size: 3rem;
+	color: #303030;
+	line-height: 7rem;
+	color: #ff5613;
+	font-weight: normal;
+}
+
+.main input {
+	border: none;
+	font-size: 4rem;
+	width: 72%;
+	background-color: #fff;
+	line-height: 4rem;
+	text-indent: 1rem;
+	font-weight: bold;
+	color: #404040;
+}
+
+.main label {
+	width: 28%;
+	display: inline-block;
+}
+
+.mainTop {
+	width: 100%;
+	margin-bottom: 5rem;
+}
+
+.mainBottom {
+	width: 85%;
+	margin: 0 auto;
+}
+
+#del {
+	background: url(hrt_x.png) no-repeat center;
+	height: 2.5em;
+}
+
+.logo {
+	width: 20px;
+	float: left;
+	padding-right: 12px;
+}
+
+.weui_cells_title {
+	width: 165px;
+}
+
+.num {
+	width: 100%;
+	position: fixed;
+	bottom: 0;
+}
+
+.num table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 2em;
+	line-height: 2em;
+}
+
+.num table tr td {
+	text-align: center;
+	border: 1px solid #ddd;
+}
+
+.weui_btn {
+	border-radius: 0;
+	line-height: 3em;
+}
+
+button {
+	width: 100%;
+	line-height: 2.5em;
+	font-size: 1em;
+	border: 0;
+	background-color: #F9F9F9;
+}
+
+.numClick {
+	background-color: #F9F9F9;
+	animation: myColor .2s;
+}
+
+.numw {
+	background-color: #04BE02;
+	animation: myColort .2s;
+}
+</style>
+
+
+<script type="text/javascript">
+	var LocString = String(window.document.location.href);
+
+	function GetQueryString(str) {
+		var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+				.exec(LocString), tmp;
+		if (rs)
+			return rs[2];
+		else
+			return rs;
+	}
+	var mid = GetQueryString("mid");
+	var code = GetQueryString("code");
+	var openid = null;
+
+	function post(url, data, callback) {
+		var xmlhttp;
+		if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		} else {// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				callback(xmlhttp.responseText);
+			}
+		}
+		xmlhttp.open("POST", url, true);
+		xmlhttp.setRequestHeader("Content-Type","application/json");
+		xmlhttp.send(data);
+	}
+	function buildOrder() {
+		var amount = document.getElementById("sumMoneyText").value;
+		document.getElementById("loadingToast").style.display = "block";
+		if (amount.match(/\d+\.?\d*/) && new Number(amount) > 0) {
+			$('#sub').on('click', null);
+			//jQuery("#div").showLoading(); // 启动转圈
+			post("hrtunifiedorder.do", '{"mid":"' + mid + '","amount":"'
+					+ amount + '","openid":"' + openid + '"}', buildOrderCallback);
+			document.getElementById("sub").onclick = "";
+			document.getElementById("sumMoneyText").disabled = "disabled";
+		} else {
+			alert("请输入正确金额");
+		}
+	}
+	function buildOrderCallback(resp) {
+		var json = JSON.parse(resp);
+		if (json.status == '0') {
+			function onBridgeReady() {
+				WeixinJSBridge
+						.invoke(
+								'getBrandWCPayRequest',
+								json.data,
+								function(res) {
+									if (res.err_msg == "get_brand_wcpay_request：ok"
+											|| res.err_msg == "get_brand_wcpay_request:ok") {
+										WeixinJSBridge.call('closeWindow');
+									} // 使用以上方式判断前端返回,微信团队郑重提示：res.err_msg将在用户支付成功后返回    ok，但并不保证它绝对可靠。 
+									else {
+										WeixinJSBridge.call('closeWindow');
+									}
+								});
+			}
+			if (typeof WeixinJSBridge == "undefined") {
+				if (document.addEventListener) {
+					document.addEventListener('WeixinJSBridgeReady',
+							onBridgeReady, false);
+				} else if (document.attachEvent) {
+					document.attachEvent('WeixinJSBridgeReady', onBridgeReady);
+					document
+							.attachEvent('onWeixinJSBridgeReady', onBridgeReady);
+				}
+			} else {
+				onBridgeReady();
+			}
+		} else {
+			alert(json.message);
+		}
+	}
+	function queryMerName() {
+		post("hrtquerymername.do?mid="+mid, "", function(merName) {
+			if (null==merName || String(merName).length < 1) {
+				alert("无效商户号");
+				WeixinJSBridge.call('closeWindow');
+			}
+			document.getElementById("merNameH").innerHTML = merName;
+			document.getElementById("merNameH_display").innerHTML = merName;
+		})
+	}
+	function getOpenid() {
+		document.getElementById("sub").disabled = "disabled";
+		post("hrtgetopenid.do?code="+code, "", function(resp) {
+			var json = JSON.parse(resp);
+			if (json.openid) {
+				openid = json.openid;
+				document.getElementById("sub").disabled = "";
+			} else {
+				alert("1获取openid失败,请重新扫码");
+			}
+		});
+	}
+</script>
+</head>
+
+<body onload="queryMerName();getOpenid()">
+	<!-- onload="queryMerName();getOpenid();" -->
+	<div id="div">
+		<div class="main">
+			<ul>
+				<li><h4 id="merNameH"></h4></li>
+				<li></li>
+			</ul>
+		</div>
+	</div>
+
+	<div class="container">
+		<div class="weui_cells weui_cells_form">
+			<div class="weui_cell">
+				<div class="weui_cell_hd">
+					<label class="weui_label">金额</label>
+				</div>
+				<div class="weui_cell_bd weui_cell_primary">
+					<input readonly="readonly" id="sumMoneyText" class="weui_input"
+						step="0.01" pattern="[0-9.]*" placeholder="请输入消费金额" type="text">
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="weui_cells_title" style="float: right;">
+		<div>
+			<img class="logo" src="hrt_hyb.png">
+		</div>
+		会员宝提供技术支持
+	</div>
+
+
+	<div class="num">
+		<table>
+			<tr>
+				<td><button class="number" value="1">1</button></td>
+				<td><button class="number" value="2">2</button></td>
+				<td><button class="number" value="3">3</button></td>
+			</tr>
+			<tr>
+				<td><button class="number" value="4">4</button></td>
+				<td><button class="number" value="5">5</button></td>
+				<td><button class="number" value="6">6</button></td>
+			</tr>
+			<tr>
+				<td><button class="number" value="7">7</button></td>
+				<td><button class="number" value="8">8</button></td>
+				<td><button class="number" value="9">9</button></td>
+			</tr>
+			<tr>
+				<td class="del"><button id="del"></button></td>
+				<td><button class="number" value="0">0</button></td>
+				<td><button class="number" value=".">.</button></td>
+			</tr>
+		</table>
+		<!-- <div class="weui_btn_area">
+		<button disabled="disabled" id="sub" type="submit" class="weui_btn weui_btn_primary" value="确定支付" onclick="buildOrder()">确定支付</button>
+		</div> -->
+		<div>
+			<button disabled="disabled" id="sub" type="submit"
+				class="weui_btn weui_btn_primary" value="确定支付"
+				onclick="buildOrder()">确定支付</button>
+		</div>
+	</div>
+
+
+	<div id="loadingToast" class="weui_loading_toast"
+		style="display: none;">
+		<div class="weui_mask_transparent"></div>
+		<div class="weui_toast">
+			<div class="weui_loading">
+				<!-- :) -->
+				<div class="weui_loading_leaf weui_loading_leaf_0"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_1"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_2"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_3"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_4"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_5"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_6"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_7"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_8"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_9"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_10"></div>
+				<div class="weui_loading_leaf weui_loading_leaf_11"></div>
+			</div>
+			<p class="weui_toast_content">支付中...</p>
+		</div>
+	</div>
+
+</body>
+<script src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
+<script>
+	var num1 = "";
+	var num2 = "";
+	var input = "";
+	$(".number").on(
+			"click",
+			function() {
+				if (input == "") {
+					num1 += $(this).val();
+					$("#sumMoneyText").val(num1);
+				} else {
+					num2 += $(this).val();
+					$("#sumMoneyText").val(num2);
+				}
+				;
+				var inputVal = $("#sumMoneyText").val();
+				inputTest = $("#sumMoneyText").val(
+						inputVal.replace(/^\./g, '').replace(/(\..*)\./g, '$1')
+								.replace('.', '$#$').replace(/00\./g, '0\.')
+								.replace('$#$', '.').replace(
+										/^(\-)*(\d+)\.(\d\d).*$/, '$1$2.$3'));
+
+			});
+
+	$("#del").on("click", function() {
+		$("#sumMoneyText").val(" ");
+		num1 = "";
+		num2 = "";
+		input = "";
+	})
+	$('#del,.number').on('touchstart', function() {
+		$(this).css("background-color", "#04BE02")
+	});
+	$('#del,.number').on('touchend', function() {
+		$(this).css("background-color", "#F9F9F9")
+	});
+	$('#sub').on('touchstart', function() {
+		$(this).css("background-color", "#F9F9F9")
+	});
+	$('#sub').on('touchend', function() {
+		$(this).css("background-color", "#04BE02")
+	});
+</script>
+</html>

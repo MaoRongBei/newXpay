@@ -1,0 +1,65 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+<script type="text/javascript">
+	var LocString = String(window.document.location.href);
+	function GetQueryString(str) {
+		var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+				.exec(LocString), tmp;
+		if (rs)
+			return rs[2];
+		else
+			return rs;
+	}
+	var code = GetQueryString("code");
+	var orderid = LocString.substring(LocString.lastIndexOf("_")+1,LocString.lastIndexOf("?"));
+	var data = null;
+	function onBridgeReady() {
+		WeixinJSBridge.invoke('getBrandWCPayRequest', data, function(res) {
+			if (res.err_msg == "get_brand_wcpay_request：ok"
+					|| res.err_msg == "get_brand_wcpay_request:ok") {
+				WeixinJSBridge.call('closeWindow');
+			} // 使用以上方式判断前端返回,微信团队郑重提示：res.err_msg将在用户支付成功后返回    ok，但并不保证它绝对可靠。 
+			else {
+				WeixinJSBridge.call('closeWindow');
+			}
+		});
+	}
+	if (typeof WeixinJSBridge == "undefined") {
+		if (document.addEventListener) {
+			document.addEventListener('WeixinJSBridgeReady', onBridgeReady,
+					false);
+		} else if (document.attachEvent) {
+			document.attachEvent('WeixinJSBridgeReady', onBridgeReady);
+			document.attachEvent('onWeixinJSBridgeReady', onBridgeReady);
+		}
+	}
+		var xmlhttp;
+		if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		} else {// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				if (xmlhttp.responseText.match(/http:\.+/g)){
+					window.document.location.href = xmlhttp.responseText;
+				}
+				data = JSON.parse(xmlhttp.responseText);
+				if (data == null) {
+					alert(xmlhttp.responseText)
+				} else {
+					onBridgeReady();
+				}
+			}
+		}
+		xmlhttp.open("POST", "cncbpubaccpaybuildorder?orderid="+orderid+"&code="+code, true);
+		xmlhttp.send("");
+</script>
+</head>
+<body></body>
+</html>

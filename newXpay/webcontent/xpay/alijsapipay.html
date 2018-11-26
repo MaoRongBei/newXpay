@@ -1,0 +1,90 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>支付</title>
+<style>
+* {
+	margin: 0;
+	padding: 0;
+}
+body{
+	background-color:#B3B4B8;
+}
+
+</style>
+<script src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
+
+<script type="text/javascript">
+	var LocString = String(window.document.location.href);
+
+	function GetQueryString(str) {
+		var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+				.exec(LocString), tmp;
+		if (rs)
+			return rs[2];
+		else
+			return rs;
+	}
+	var orderid = GetQueryString("orderid");
+
+	function post(url, data, callback) {
+		var xmlhttp;
+		if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		} else {// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				callback(xmlhttp.responseText);
+			}
+		}
+		xmlhttp.open("POST", url, true);
+		xmlhttp.setRequestHeader("Content-Type","application/json");
+		xmlhttp.send(data);
+	}
+	
+	function getPayUrl() {
+		tradePay("2018052921001004290591710557");         
+		$("#payButton").click(function() {          
+		tradePay("2018052921001004290591710557");         
+		});        
+		$("#closeButton").click(function() {           
+		AlipayJSBridge.call('closeWebview');        
+		});    
+	}
+	 function log(obj) {       
+		//$("#result").append(obj).append(" ").append("<br />");  
+		document.getElementsById("result");
+		}
+		 function ready(callback) {      
+		 alert("cc"); 
+		 if (window.AlipayJSBridge) {     
+		 alert("dd");    
+		 callback && callback();     
+		 } else {      
+		 alert("ee");    
+		 document.addEventListener('AlipayJSBridgeReady', callback, false);     
+		 }   
+		 }    
+		 
+		function tradePay(tradeNO) {     
+		   ready(function(){   
+		   AlipayJSBridge.call("tradePay", { tradeNO: tradeNO  }, 
+		   function (data) {
+		   log(JSON.stringify(data));  
+		   if ("9000" == data.resultCode) {
+		   log("支付成功");                
+		   }            
+		   });       
+		   });    }
+</script>
+</head>
+
+<body onload="getPayUrl()">
+  <p id="result"> result:  </p>
+</body>
+</html>
