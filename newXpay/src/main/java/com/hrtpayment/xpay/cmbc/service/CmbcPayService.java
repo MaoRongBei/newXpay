@@ -1,22 +1,30 @@
 package com.hrtpayment.xpay.cmbc.service;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.hrtpayment.xpay.common.dao.JdbcDao;
 import com.hrtpayment.xpay.common.service.WxpayService;
+import com.hrtpayment.xpay.quickpay.cups.util.CTime;
 import com.hrtpayment.xpay.utils.exception.BusinessException;
 
 @Service
 public class CmbcPayService implements WxpayService{
 	private final Logger logger = LogManager.getLogger();
 	
+	@Value("dae.defaultGroup")
+	private String daeDefaultGroup;
+	
+	@Value("dae.unno") 
+	private String daeUnno;
 
 	@Autowired
 	JdbcDao dao;
@@ -60,7 +68,7 @@ public class CmbcPayService implements WxpayService{
 	 * @return
 	 * @throws BusinessException
 	 */
-	public Map<String, Object> getMerchantCode3 (String unno, String mid, String payway,BigDecimal amount) throws BusinessException{
+	public Map<String, Object> getMerchantCode3 (String unno, String mid, String payway,BigDecimal amount,String area) throws BusinessException{
 		List<Map<String, Object>> list;
 		//111000用于测试  生产 不提交||"111000".equals(unno)
 		if (unno==null || "110000".equals(unno) ||"880000".equals(unno)) {
@@ -88,21 +96,90 @@ public class CmbcPayService implements WxpayService{
 		Map<String,Object> map = list.get(0);
 		String fiid =String.valueOf(map.get("FIID"));
 		if("99".equals(fiid)){
-//			logger.info("哈哈哈哈哈。。。。。。走轮序组了！");
 			String gorupName= String.valueOf(map.get("MERCHANTID"));
-			String poolSql=" select * from (select t1.hpid,t2.merchantcode,t2.storeid,t2.fiid ,T2.orgcode,T2.minfo2,"
-							+ "T2.cdate,T2.category,T2.merchantaddress,T2.appid,T2.mch_id,T1.txnmaxcount  from hrt_termaccpool T1,"
-							+ " bank_merregister T2,hrt_fi f WHERE t1.btaid=t2.hrid"
-							+ " and T2.fiid=f.fiid and f.fiinfo2 like ? and T1.status=1 "
-							+ " and t1.txnmaxamt>=nvl(t1.txnamt,0)+? and t1.groupname=? "
-							+ " and T2.status=1 order by T1.txnamt asc,txnmaxcount desc) where rownum=1 ";
-			list = dao.queryForList(poolSql, "%"+payway+"%",amount,gorupName);
-			if (list.size()<1) throw new BusinessException(8001,"指定通道未开通");
+			String orderTime=CTime.formatDate(new Date(), "HHMI");
+            /*
+             *2018-11-27 修改
+             * 
+             *判断机构号是否包含j62077： 是、根据交易上送的地点信息去匹配轮询组信息  
+             *                           关联两个轮询组，判断是或否有重叠商户 
+             *                           有就从重复商户号内取交易 按照笔数 升序排列 获取商户号
+             *                           
+             *                        不是、不执行本处操作
+             *
+             */
+			if (daeUnno.contains(unno)&&!"".equals(area.trim())&&null!=area) {
+				String poolSql="select t.* from  hrt_termaccpool ht,"
+						+ " (select hrid,merchantcode,storeid,bm.fiid, merchantid , orgcode, minfo2, bm.cdate, category, merchantaddress, appid,shortname ,channel_id,mch_id   "
+						+ "    from hrt_termaccpool ht ,hrt_fi hi,bank_merregister bm "
+						+ "   where 1=1 and hi.status='1' and hi.fiinfo2 like ? "
+						+ "     and hi.fiid= bm.fiid and bm.status='1' and bm.approvestatus='Y' and ht.btaid=bm.hrid"
+						+ "     and ht.status='1'  and ht.txnmaxamt>=nvl(ht.txnamt,0)+? and ht.txnmaxcount>=nvl(ht.txncount,0)+1"
+						+ "     and ? between nvl(ht.starttime,'0000') and nvl(ht.endtime,'2359') "
+						+ "     and ht.GROUPNAME=(select MERCHANTID from bank_merregister where fiid=99 and merchantid like 'DAE%' and  merchantname like ?  and status='1')"
+						+ "  intersect "
+						+ "  select  hrid,merchantcode,storeid,bm.fiid, merchantid , orgcode, minfo2, bm.cdate, category, merchantaddress, appid,shortname ,channel_id,mch_id     "
+						+ "    from hrt_termaccpool ht ,hrt_fi hi,bank_merregister bm "
+						+ "   where 1=1 and hi.status='1' and hi.fiinfo2 like ? "
+						+ "     and hi.fiid= bm.fiid and bm.status='1' and bm.approvestatus='Y' and ht.btaid=bm.hrid "
+						+ "     and ht.status='1'  and ht.txnmaxamt>=nvl(ht.txnamt,0)+? and ht.txnmaxcount>=nvl(ht.txncount,0)+1"
+						+ "     and ? between nvl(ht.starttime,'0000') and nvl(ht.endtime,'2359') and ht.GROUPNAME='LMF') t "
+						+ " where 1=1  and  rownum=1 and ht.btaid=t.hrid and  GROUPNAME=? and  status='1' "
+						+ " order by txncount ";
+				list = dao.queryForList(poolSql,"%"+payway+"%",amount,orderTime,"%"+area+"%","%"+payway+"%",amount,orderTime,gorupName);
+			}
+			/*
+			 * 2018-11-26  修改
+			 * 
+			 * 当unno=j62077时 判断list.size()==0 true、按照原有方式取商户号
+			 *                                   false、 使用list内获取的商户号进行交易
+			 * 
+			 * 轮询组取增加判断：1、金额判断 
+			 *                  2、时间判断
+			 * 
+			 */
+			if (list.size()==0) {
+				String poolSql=" select * from (select t1.hpid,t2.merchantcode,t2.storeid,t2.fiid ,T2.orgcode,T2.minfo2,"
+						+ "T2.cdate,T2.category,T2.merchantaddress,T2.appid,T2.mch_id,T1.txnmaxcount  from hrt_termaccpool T1,"
+						+ " bank_merregister T2,hrt_fi f WHERE t1.btaid=t2.hrid"
+						+ " and T2.fiid=f.fiid and f.fiinfo2 like ? and T1.status=1 "
+						+ " and t1.txnmaxamt>=nvl(t1.txnamt,0)+? and t1.groupname=? "
+						+ " and t1.txnmaxcount>=nvl(t1.txncount,0)+?  "  //增加金额判断
+						+ " and ? between nvl(t1.starttime,'0000') and nvl(t1.endtime,'2359') "//增加时间判断
+						+ " and T2.status=1 order by T1.txnamt asc,txncount,txnmaxcount desc) where rownum=1 ";
+				list = dao.queryForList(poolSql, "%"+payway+"%",amount,gorupName,orderTime);
+				/*
+				 * 2018-11-26  修改
+				 * 
+				 * 当list.size <1 时判断  gorupName 是否含有DAE 
+				 * true： 则为大额地域分组，跳转到默认组 daeDefaultGroup 内取商户号 进行交易
+				 *       如果 daeDefaultGroup 组内也没有可用商户号 返回 8001
+				 * false：返回 8001
+				 * 
+				 */
+				if (list.size()<1){
+					if (gorupName.toUpperCase().contains("DAE")) {
+						gorupName=daeDefaultGroup;
+						list = dao.queryForList(poolSql, "%"+payway+"%",amount,gorupName,orderTime);
+						if (list.size()<1) throw new BusinessException(8001,"指定通道未开通");
+					}else {
+						throw new BusinessException(8001,"指定通道未开通");
+					}
+				}
+			}
+			
 			
 			for(Map<String, Object> mm :list){
 				Integer hpid = Integer.parseInt(String.valueOf(mm.get("HPID")));
 				Integer txnmaxcount = Integer.parseInt(String.valueOf(mm.get("TXNMAXCOUNT")));
-				if (txnmaxcount<=1 ) {
+				/*
+				 * 2018-11-26 修改 
+				 * 
+				 * 如果gorupName内不含有DAE时 当最大值既减少至小于等于1时
+				 * 修改最大值为99999999
+				 * 
+				 */
+				if (txnmaxcount<=1 && !gorupName.toUpperCase().contains("DAE")) {
 					String updateTxnmaxcountSql=" update HRT_TERMACCPOOL t  set  txnmaxcount = '99999999' "  
 							+ " where t.status=1  and t.groupname=?";
 					dao.update(updateTxnmaxcountSql, gorupName);
