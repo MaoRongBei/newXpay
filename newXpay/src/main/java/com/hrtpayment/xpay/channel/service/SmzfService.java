@@ -53,7 +53,7 @@ public class SmzfService {
 	 * 支付通道商选择和判断
 	 * @param bean
 	 */
-	public String pay(String unno,String mid,String orderid,String subject,String payway,
+	public String pay(HrtPayXmlBean bean,String unno,String mid,String orderid,String subject,String payway,
 			BigDecimal amount,String tid,String hybRate,String hybType) {
 		if (orderid == null || "".equals(orderid)
 				|| !orderid.startsWith(unno) || orderid.length()>32) {
@@ -61,7 +61,7 @@ public class SmzfService {
 		}
 		String qrcode;
 		try {
-			qrcode = getQrCode(unno, mid, orderid, subject, payway, amount, tid,hybRate,hybType);
+			qrcode = getQrCode(bean,unno, mid, orderid, subject, payway, amount, tid,hybRate,hybType);
 			return qrcode;
 		} catch (BusinessException e) {
 			throw new HrtBusinessException(Integer.valueOf(e.getErrorCode()),e.getMessage());
@@ -80,14 +80,21 @@ public class SmzfService {
 	 * @return
 	 * @throws BusinessException
 	 */
-	private String getQrCode(String unno,String mid,String orderid,String subject,
+	private String getQrCode(HrtPayXmlBean bean,String unno,String mid,String orderid,String subject,
 			String payway,BigDecimal amount,String tid,String hybRate,String hybType) throws BusinessException {
 		int fiid = 0;
 		if ("WXZF".equals(payway) || "ZFBZF".equals(payway)||"QQZF".equals(payway)||"JDZF".equals(payway)|| "BDQB".equals(payway)) {
 		}else{
 			throw new HrtBusinessException(9010);
 		}
-		Map<String, Object> map = cmbcPay.getMerchantCode3(unno, mid, payway,amount);
+		/*
+		 * 2018-11-27 修改
+		 * 
+		 * 机构 j62077 根据定位获取交易地址area 
+		 * 
+		 */
+		String area=bean.getArea(); //交易地点
+		Map<String, Object> map = cmbcPay.getMerchantCode3(unno, mid, payway,amount,area);
 		if (subject == null || "".equals(subject)) {
 			subject = String.valueOf(map.get("SHORTNAME"));
 		}
@@ -134,9 +141,15 @@ public class SmzfService {
 		
 		checkAuthCodePayType(bean);
 		String subject = bean.getSubject();
-
+        /*
+         * 2018-11-27 修改
+         * 
+         * 机构  j62077 根据定位获取交易地点 area
+         * 
+         */
+		String area=bean.getArea();
 		BigDecimal amount = new BigDecimal(bean.getAmount());
-		Map<String, Object> map = cmbcPay.getMerchantCode3(bean.getUnno(), bean.getMid(), bean.getPayway(),amount);
+		Map<String, Object> map = cmbcPay.getMerchantCode3(bean.getUnno(), bean.getMid(), bean.getPayway(),amount,area);
 		int fiid=Integer.parseInt(String.valueOf(map.get("FIID")));
 		xpayService.checkBankTxnLimit(fiid,amount,bean.getPayway());
 		String merchantCode = String.valueOf(map.get("MERCHANTCODE"));
