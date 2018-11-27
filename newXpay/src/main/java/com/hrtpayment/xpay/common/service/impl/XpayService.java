@@ -118,7 +118,7 @@ public class XpayService {
 		Map<String, Object> map;
 		int fiid;
 		try {
-			map = cmbcService.getMerchantCode3(null, mid, payway,amount);
+			map = cmbcService.getMerchantCode3(null, mid, payway,amount,"");
 			fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
 			checkBankTxnLimit(fiid,amount,payway);
 		} catch (BusinessException e1) {
@@ -274,7 +274,7 @@ public class XpayService {
 		String QrCode = null;
 		try {
 			//根据MID  判断 走哪个银行
-			Map<String, Object> map = cmbcService.getMerchantCode3(null, mid, payway,amt);
+			Map<String, Object> map = cmbcService.getMerchantCode3(null, mid, payway,amt,"");
 			int fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
 			checkBankTxnLimit(fiid, amt, payway);
 			String bankMid = (String) map.get("MERCHANTCODE");
