@@ -58,6 +58,9 @@ public class ManageService {
 	
 	@Value("${quick.dayLAmt}")
 	private String dayLAmt;
+	
+	@Value("dae.unno") 
+	private String daeUnno;
 
 	/**
 	 * 查询订单
@@ -308,17 +311,23 @@ public class ManageService {
 	}
 	
     /**
-     *  立码富专用限额判断方法
+     *  限额判断方法
      *  仅做校验 不做累增
      * @param merid
      * @param amt
      * @return
      * @throws BusinessException
      */
-	public boolean checkDayMerAmtForLMF(String merid,Double amt) throws BusinessException{
+	public boolean checkDayMerAmtForLMF(String merid,Double amt,String unno) throws BusinessException{
 		boolean flag=false;
-		String querySql=" select nvl(t1.minfo1,9900) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
-						+ " where t.maid = t1.maid and t.hrt_mid =? ";
+		String querySql="";
+		if (unno.contains(daeUnno)) {
+			querySql=" select nvl(t1.minfo1,20000) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
+					+ " where t.maid = t1.maid and t.hrt_mid =? ";
+		}else{
+			querySql=" select nvl(t1.minfo1,9900) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
+					+ " where t.maid = t1.maid and t.hrt_mid =? ";
+		}
 		List<Map<String, Object>> list = dao.queryForList(querySql, merid);
 		if(list.size()>0){
 			Map<String, Object> map = list.get(0);
@@ -518,4 +527,27 @@ public class ManageService {
 		}
 		return false;
 	}
+	
+	
+	/**
+	 * 2018-11-27 新增
+	 * 
+	 * 功能：限制大额交易
+	 * 规则：根据openid和userid及和融通商户号进行判断
+	 *       1、同一个openid、userid当日交易超过9000笔数超过三笔且均为贷记卡交易
+	 *          禁止该商户当日进行交易
+	 *  
+	 * @param merid  商户号
+	 */
+	public void  checkPayForDae(String merid){
+		String chOrdSql="select 1 "
+				+ "       from ( select  userid,count(1) c from plusr.pg_wechat_txn where  lmdate between trunc(sysdate,'dd') and sysdate  and mer_id=? and txnamt>9000 and paytype='2' group by  userid ) t "
+				+ "      where t.c>=3 ";
+		List<Map<String, Object>> list=dao.queryForList(chOrdSql, merid);
+		if (list.size()>0) {
+			throw new HrtBusinessException(8000,"今日交易次数超限，暂时无法进行交易");
+		}
+		 
+	}
+	
 }
