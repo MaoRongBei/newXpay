@@ -109,7 +109,7 @@ public class CmbcPayService implements WxpayService{
              *
              */
 			if (daeUnno.contains(unno)&&!"".equals(area.trim())&&null!=area) {
-				String poolSql="select t.* from  hrt_termaccpool ht,"
+				String poolSql="select t.* ,ht.hpid,ht.txnmaxcount from  hrt_termaccpool ht,"
 						+ " (select hrid,merchantcode,storeid,bm.fiid, merchantid , orgcode, minfo2, bm.cdate, category, merchantaddress, appid,shortname ,channel_id,mch_id   "
 						+ "    from hrt_termaccpool ht ,hrt_fi hi,bank_merregister bm "
 						+ "   where 1=1 and hi.status='1' and hi.fiinfo2 like ? "
@@ -184,9 +184,12 @@ public class CmbcPayService implements WxpayService{
 							+ " where t.status=1  and t.groupname=?";
 					dao.update(updateTxnmaxcountSql, gorupName);
 				}
-				String updateSql=" update HRT_TERMACCPOOL t set t.txnamt=nvl(t.txnamt,0)+?,"
-								+ " t.txncount=t.txncount+1 , txnmaxcount = to_char(txnmaxcount-1) " //(case txnmaxcount when 1 then  '9999999' else to_char(txnmaxcount-1) end) "
-								+ " where t.status=1 and "
+				String updateSql=" update HRT_TERMACCPOOL t set t.txnamt=nvl(t.txnamt,0)+? "
+								+ " ,t.txncount=t.txncount+1  ";
+				if (gorupName.toUpperCase().contains("DAE")) {
+					updateSql=updateSql+ " ,txnmaxcount = to_char(txnmaxcount-1) " ;
+				}
+				updateSql=updateSql	+ " where t.status=1 and "
 								+ " t.txnmaxamt>=nvl(t.txnamt,0)+? and t.hpid=?";
 				Integer count=dao.update(updateSql, amount,amount,hpid);
 				if(count>0){
