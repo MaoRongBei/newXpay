@@ -477,12 +477,19 @@ public class ChannelService {
 		String orderid=bean.getOrderid();
 		String qrtid = bean.getTid();
 		String subject=bean.getSubject();
+		/*
+		 * 2018-11-27 修改
+		 * 
+		 * 机构 j62077 根据定位获取交易地址area 
+		 * 
+		 */
+		String area=bean.getArea(); //交易地点
 		//商品名为空则取商户名
 		if (subject == null || "".equals(subject)) {
 			subject = merService.queryMerName(mid);
 		}
 //		Map<String,Object> paywayMap = queryPayway(unno,mid);
-		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "WXPAY",amount);
+		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "WXPAY",amount,area);
 		BigDecimal fiid = (BigDecimal) paywayMap.get("FIID");
 		xpayService.checkBankTxnLimit(fiid.intValue(),amount,"WXPAY");
 		Object merchantCode = paywayMap.get("MERCHANTCODE");
@@ -533,7 +540,14 @@ public class ChannelService {
 			subject = merService.queryMerName(mid);
 		}
 //		Map<String,Object> paywayMap = queryPayway(unno,mid);
-		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "ZFBZF",amount);
+		/*
+		 * 2018-11-27 修改
+		 * 
+		 * 机构 j62077 根据定位获取交易地址area 
+		 * 
+		 */
+		String area=bean.getArea(); //交易地点
+		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "ZFBZF",amount,area);
 		BigDecimal fiid = (BigDecimal) paywayMap.get("FIID");
 		xpayService.checkBankTxnLimit(fiid.intValue(),amount,"ZFBZF");
 		Object merchantCode = paywayMap.get("MERCHANTCODE");
@@ -594,13 +608,20 @@ public class ChannelService {
 	 * @throws BusinessException 
 	 * @throws HrtBusinessException
 	 */
-	public String insertOrderByOpenid(String unno,String mid,String orderid,String subject,BigDecimal amount
+	public String insertOrderByOpenid(HrtPayXmlBean bean,String unno,String mid,String orderid,String subject,BigDecimal amount
 			,String limit_pay,String qrtid,String openid) throws BusinessException {
 		//商品名为空则取商户名
 		if (subject == null || "".equals(subject)) {
 			subject = merService.queryMerName(mid);
 		}
-		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "WXPAY",amount);
+		/*
+		 * 2018-11-27 修改
+		 * 
+		 * 机构 j62077 根据定位获取交易地址area 
+		 * 
+		 */
+		String area=bean.getArea(); //交易地点
+		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "WXPAY",amount,area);
 		BigDecimal fiid = (BigDecimal) paywayMap.get("FIID");
 		Object merchantCode = paywayMap.get("MERCHANTCODE");
 		//插入订单信息
