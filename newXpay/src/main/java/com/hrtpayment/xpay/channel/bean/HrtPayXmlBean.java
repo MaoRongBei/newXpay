@@ -48,7 +48,10 @@ public class HrtPayXmlBean {
 	private String payOrderTime;
 	private String groupName;
 	private String bankMid;
-
+	
+    //大额交易使用
+	private String proCode;
+	
 	private String rtnCode;
 	private String rtnMsg;
 	private String bankType;
@@ -252,7 +255,12 @@ public class HrtPayXmlBean {
 	public void setPaymode(String paymode) {
 		this.paymode = paymode;
 	}
-	
+	public String getProCode() {
+		return proCode;
+	}
+	public void setProCode(String proCode) {
+		this.proCode = proCode;
+	}
 	public static HrtPayXmlBean parseXmlFromStr(String str) throws JAXBException {
 		HrtPayXmlBean bean = null;
 		Unmarshaller us = jc.createUnmarshaller();

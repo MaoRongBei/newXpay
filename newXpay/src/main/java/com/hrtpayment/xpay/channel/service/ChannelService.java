@@ -8,6 +8,7 @@ import java.util.Map;
 import org.apache.commons.beanutils.BeanUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.appender.rolling.SizeBasedTriggeringPolicy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -481,7 +482,7 @@ public class ChannelService {
 		if (subject == null || "".equals(subject)) {
 			subject = merService.queryMerName(mid);
 		}
-//		Map<String,Object> paywayMap = queryPayway(unno,mid);
+//		Map<String,Object> paywayMap = queryPayway(unno,mid); 
 		Map<String,Object> paywayMap = cmbcPay.getMerchantCode3(unno, mid, "WXPAY",amount);
 		BigDecimal fiid = (BigDecimal) paywayMap.get("FIID");
 		xpayService.checkBankTxnLimit(fiid.intValue(),amount,"WXPAY");
@@ -492,8 +493,26 @@ public class ChannelService {
 		if (list.size()>0) {
 			throw new HrtBusinessException(9007);
 		}
+		/*
+		 * 
+		 * 2018-11-27  修改
+		 * 
+		 * 微信小程序支付标识  
+		 * payway="WXPAY" isAliSucPage="1"
+		 * trantype="12"
+		 * 微信公众号支付
+		 * trantype="11"
+		 * 微信支付
+		 * trantype="1"
+		 * 
+		 */
+//		String  wxType=bean.getIsAliSucPage();
+//		String tranType="11";
+//		if ("1".equals(wxType)) {
+//			tranType="12";
+//		}
 		String sql = "insert into pg_wechat_txn (pwid,fiid, txntype,cdate,status,"
-				+ "mer_orderid, detail, txnamt, mer_id,unno,bankmid,bank_type,mer_tid,trantype,hybtype,hybrate) values"
+				+ " mer_orderid, detail, txnamt, mer_id,unno,bankmid,bank_type,mer_tid,trantype,hybtype,hybrate) values"
 				+ "(S_PG_Wechat_Txn.nextval,?,'0',sysdate,'A',?,?,?,?,?,?,?,?,'1',?,?)";
 		dao.update(sql, fiid, orderid, subject, amount, mid, unno,merchantCode,"no_credit".equals(limit_pay)?"no_credit":null,
 				qrtid,hybType,hybRate);
@@ -544,8 +563,8 @@ public class ChannelService {
 			throw new HrtBusinessException(9007);
 		}
 		String insertPaySql=" insert into pg_wechat_txn (pwid,txntype,trantype,cdate,lmdate,status,txnamt,detail"
-				+ ",fiid,mer_orderid,mer_id,bankmid,hybtype,hybrate,unno,mer_tid)"
-				+ " values (S_PG_Wechat_Txn.nextval,0,2,sysdate,sysdate,'A',?,?,?,?,?,?,?,?,?,?) ";
+				+ ",fiid,mer_orderid,mer_id,bankmid,hybtype,hybrate,unno,mer_tid,trantype)"
+				+ " values (S_PG_Wechat_Txn.nextval,0,2,sysdate,sysdate,'A',?,?,?,?,?,?,?,?,?,?,21) ";
 		dao.update(insertPaySql,amount,subject, fiid,orderid,mid,merchantCode,hybType,hybRate,unno,qrtid);
 		int ifiid = fiid.intValue();
 //		String url =alipayService.getPubaccPayUrl(ifiid, orderid,orgcode);
