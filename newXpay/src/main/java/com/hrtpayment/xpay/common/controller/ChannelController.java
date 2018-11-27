@@ -8,6 +8,7 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +39,9 @@ public class ChannelController {
 	ManageService manageService;
 	@Autowired
 	CupsPayService cupsPayService;
+	
+	@Value("dae.unno") 
+	private String daeUnno;
 
 	/**
 	 * 二维码
@@ -77,6 +81,15 @@ public class ChannelController {
  
 			if(!"QBPAY".equals(payway)&&!"880000".equals(unno)&&!"962073".equals(unno)){
 				manageService.addDayMerAmt(bean.getMid(),amount.doubleValue() );
+			}else if(unno.contains(daeUnno)){
+				/*
+				 * 2018-11-27 修改
+				 * 
+				 * 添加限制 unno=j62077 单笔限额2W 单日10W
+				 * 
+				 */
+				manageService.checkDayMerAmtForLMF(bean.getMid(),amount.doubleValue(),unno );
+				manageService.checkPayForDae(bean.getMid());
 			}
 			if ("WXPAY".equals(payway)) {
 					ch.insertGzhOrder(bean,"", amount,bean.getHybRate(),bean.getHybType());
@@ -85,7 +98,7 @@ public class ChannelController {
 				ch.insertJsapiOrder(bean,"", amount,bean.getHybRate(),bean.getHybType());
 				logger.info("{}:通道商支付宝公众号下单成功",bean.getOrderid());
 			} else if ("WXZF".equals(payway) || "ZFBZF".equals(payway)|| "QQZF".equals(payway)|| "BDQB".equals(payway)||"JDZF".equals(payway)) {
-				String qrcode = smzf.pay(unno, bean.getMid(), bean.getOrderid(), bean.getSubject(), payway, amount,bean.getTid(),bean.getHybRate(),bean.getHybType());
+				String qrcode = smzf.pay(bean,unno, bean.getMid(), bean.getOrderid(), bean.getSubject(), payway, amount,bean.getTid(),bean.getHybRate(),bean.getHybType());
 				bean.setQrcode(qrcode);
 				bean.setStatus("S");
 				logger.info("{}:通道商扫码支付下单成功",bean.getOrderid());
@@ -161,6 +174,15 @@ public class ChannelController {
              */
 			if(!"880000".equals(bean.getUnno())&&!"962073".equals(bean.getUnno())){
 				manageService.addDayMerAmt(bean.getMid(),amount.doubleValue() );
+			}else if(bean.getUnno().contains(daeUnno)){
+				/*
+				 * 2018-11-27 修改
+				 * 
+				 * 添加限制 unno=j62077 单笔限额2W 单日10W
+				 * 
+				 */
+				manageService.checkDayMerAmtForLMF(bean.getMid(),amount.doubleValue(),bean.getUnno() );
+				manageService.checkPayForDae(bean.getMid());
 			}
 			bean.setPayOrderTime(new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()));
 			String status = smzf.barcodePay(bean);
@@ -516,7 +538,7 @@ public class ChannelController {
 			 */
 			manageService.addDayMerAmt(bean.getMid(),amount.doubleValue() );
 			if ("WXPAY".equals(payway)) {
-					String payinfo = ch.insertOrderByOpenid(unno,mid,orderid,subject,amount,limit_pay,tid,openid);
+					String payinfo = ch.insertOrderByOpenid(bean,unno,mid,orderid,subject,amount,limit_pay,tid,openid);
 					bean.setPayinfo(payinfo);
 					bean.setStatus("S");
 					logger.info("{}:通道商公众号下单成功",bean.getOrderid());
