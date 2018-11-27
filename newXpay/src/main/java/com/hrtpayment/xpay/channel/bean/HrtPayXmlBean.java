@@ -59,9 +59,21 @@ public class HrtPayXmlBean {
 	private  String  isAliSucPage;
 	
 	
+	/*
+	 * 2018-11-27 修改
+	 * 
+	 * 机构  j62077  需要上送交易地点
+	 * 
+	 */
+	private String  area;
 	
 	
-	
+	public String getArea() {
+		return area;
+	}
+	public void setArea(String area) {
+		this.area = area;
+	}
 	public String getIsAliSucPage() {
 		return isAliSucPage;
 	}
