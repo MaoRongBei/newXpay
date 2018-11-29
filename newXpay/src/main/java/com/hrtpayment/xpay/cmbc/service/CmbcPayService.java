@@ -20,10 +20,10 @@ import com.hrtpayment.xpay.utils.exception.BusinessException;
 public class CmbcPayService implements WxpayService{
 	private final Logger logger = LogManager.getLogger();
 	
-	@Value("dae.defaultGroup")
+	@Value("${dae.defaultGroup}")
 	private String daeDefaultGroup;
 	
-	@Value("dae.unno") 
+	@Value("${dae.unno}") 
 	private String daeUnno;
 
 	@Autowired
@@ -144,7 +144,7 @@ public class CmbcPayService implements WxpayService{
 						+ " bank_merregister T2,hrt_fi f WHERE t1.btaid=t2.hrid"
 						+ " and T2.fiid=f.fiid and f.fiinfo2 like ? and T1.status=1 "
 						+ " and t1.txnmaxamt>=nvl(t1.txnamt,0)+? and t1.groupname=? "
-						+ " and t1.txnmaxcount>=nvl(t1.txncount,0)+?  "  //增加金额判断
+						+ " and t1.txnmaxcount>=nvl(t1.txncount,0)+1  "  //增加金额判断
 						+ " and ? between nvl(t1.starttime,'0000') and nvl(t1.endtime,'2359') "//增加时间判断
 						+ " and T2.status=1 order by T1.txnamt asc,txncount,txnmaxcount desc) where rownum=1 ";
 				list = dao.queryForList(poolSql, "%"+payway+"%",amount,gorupName,orderTime);
