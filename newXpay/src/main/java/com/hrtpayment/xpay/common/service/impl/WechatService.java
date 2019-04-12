@@ -76,7 +76,7 @@ public class WechatService {
 	 * @param orderid
 	 * @return
 	 */
-	public String getPubaccPayUrl(int fiid, String orderid,String mch_id){
+	public String getPubAccPayUrl(int fiid, String orderid,String isCredit){
 		//1.0
 //		return String.format("%s/xpay/wxauth_%s_%s", host, fiid, orderid);
 		
@@ -90,7 +90,7 @@ public class WechatService {
 		
 		//3.0
 		WxpayService wx = getWxpayService(fiid);
-		String codeUrl = String.format("%s/xpay/wxpay_%s_%s%s", host, wx.getWxpayFiid(), orderid,host2);
+		String codeUrl = String.format("%s/xpay/wxpay_%s_%s_%s%s", host, wx.getWxpayFiid(), orderid,isCredit,host2);
 		String authUrl = "https://open.weixin.qq.com/connect/oauth2/authorize?appid=%s&redirect_uri=%s&response_type=code&scope=snsapi_base&state=STATE#wechat_redirect";
 		String url = String.format(authUrl, wx.getWxpayAppid(), UrlCodec.encodeWithUtf8(codeUrl));
 		return url;	
@@ -102,8 +102,8 @@ public class WechatService {
 	 * @param orderid
 	 * @return
 	 */
-	public String getPubaccPayUrl(int fiid, String orderid){
-		return getPubaccPayUrl(fiid, orderid, null);
+	public String getPubaccPayUrl(int fiid, String orderid,String isCredit){
+		return getPubAccPayUrl(fiid, orderid, isCredit);
 	}
 	
 	/**
@@ -142,8 +142,8 @@ public class WechatService {
 		return json.getString("openid");
 	}
 	
-	public String getJsPayInfo(int fiid, String orderid, String openid) {
-		return getWxpayService(fiid).getWxpayPayInfo(orderid, openid);
+	public String getJsPayInfo(int fiid, String orderid, String openid,String isCredit) {
+		return getWxpayService(fiid).getWxpayPayInfo(orderid, openid,isCredit);
 	}
 	
 	private WxpayService getWxpayService (int fiid) {

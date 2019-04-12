@@ -15,7 +15,7 @@ public interface AlipayService {
 	 */
 	String getAliAppidByOrder(String orderid);
 	String getAliAppid();
-	String getAlipayPayInfo(String orderid,String openid,String userid);
+	String getAlipayPayInfo(String orderid,String openid,String userid,String isCredit);
 	String getAlipaySecret();
 	int getAlipayFiid();
 	

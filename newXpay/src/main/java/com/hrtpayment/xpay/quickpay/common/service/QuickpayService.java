@@ -846,7 +846,7 @@ public class QuickpayService {
 //		}
 	    map= quickPayRules(bean);
 		if (map==null) {
-			bean.setMsg("通道暂不可用");
+			bean.setMsg("通道暂未开通，请使用首页的“扫码收款”功能进行收款。");
 			bean.setRtnHtml(htmlService.returnHtml("3", bean));
 			bean.setStatus("0");
 			return "";

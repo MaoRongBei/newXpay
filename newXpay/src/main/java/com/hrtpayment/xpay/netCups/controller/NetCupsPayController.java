@@ -41,7 +41,7 @@ public class NetCupsPayController {
 	 */
 	@RequestMapping("netcupalicallback")
 	@ResponseBody
-	public void netCupAliCallBank(HttpServletRequest request){
+	public String netCupAliCallBank(HttpServletRequest request){
 		
 		 Map<String,String> requestMap = new HashMap<String,String>();
 		 Enumeration<String> parameterEnum = request.getParameterNames();
@@ -57,6 +57,7 @@ public class NetCupsPayController {
 		} catch (BusinessException e) {
 		    logger.info("[网联-支付宝]异步通知处理异常{}",e.getMessage());
 		}
+		 return "SUCCESS";
 	}
 	
 	
@@ -105,15 +106,15 @@ public class NetCupsPayController {
  
 	
 	
-	@RequestMapping("netcupAliClosed")
-	@ResponseBody
-	public void netCupAliClosed(@RequestParam String orderid){
-		 try {
-			 netCupsPayService.cupsAliClosed(orderid);
-		} catch (BusinessException e) {
-		    logger.info("[银联-支付宝]订单关闭    处理异常{}",e.getMessage());
-		}
-	}
+//	@RequestMapping("netcupAliClosed")
+//	@ResponseBody
+//	public void netCupAliClosed(@RequestParam String orderid){
+//		 try {
+//			 netCupsPayService.cupsAliClosed(orderid);
+//		} catch (BusinessException e) {
+//		    logger.info("[银联-支付宝]订单关闭    处理异常{}",e.getMessage());
+//		}
+//	}
 //	@RequestMapping("netcupWxCancel")
 //	@ResponseBody
 //	public void cupWxCancel(@RequestParam String bankmid, @RequestParam String orderid){
@@ -134,20 +135,20 @@ public class NetCupsPayController {
 //		}
 //	}
 	
-	/**
-	 * 
-	 * 撤销 同笔交易可以 执行多次    但是只有第一次成功撤销 会进行退款
-	 * 
-	 * @param orderid
-	 */
-	@RequestMapping("netcupAliCancel")
-	@ResponseBody
-	public void netCupAliCancel(@RequestParam String orderid){
-		 try { 
-			 netCupsPayService.cupsAliCancel(orderid);
-		} catch (BusinessException e) {
-		    logger.info("[银联-支付宝]订单撤销    处理异常{}",e.getMessage());
-		}
-	}
+//	/**
+//	 * 
+//	 * 撤销 同笔交易可以 执行多次    但是只有第一次成功撤销 会进行退款
+//	 * 
+//	 * @param orderid
+//	 */
+//	@RequestMapping("netcupAliCancel")
+//	@ResponseBody
+//	public void netCupAliCancel(@RequestParam String orderid){
+//		 try { 
+//			 netCupsPayService.cupsAliCancel(orderid);
+//		} catch (BusinessException e) {
+//		    logger.info("[银联-支付宝]订单撤销    处理异常{}",e.getMessage());
+//		}
+//	}
 
 }

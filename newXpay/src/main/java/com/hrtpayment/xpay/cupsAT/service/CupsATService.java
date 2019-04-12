@@ -36,6 +36,8 @@ import com.hrtpayment.xpay.cups.sdk.LogUtil;
 import com.hrtpayment.xpay.cups.sdk.SDKConstants;
 import com.hrtpayment.xpay.cups.sdk.SecureUtil;
 import com.hrtpayment.xpay.quickpay.cups.util.RsaCertUtils;
+import com.hrtpayment.xpay.utils.SimpleXmlUtil;
+import com.hrtpayment.xpay.utils.exception.BusinessException;
 import com.hrtpayment.xpay.utils.exception.HrtBusinessException;
 
 
@@ -277,6 +279,7 @@ public class CupsATService {
 		req.put("timestamp",sm.format(new Date()));
 		return req;
 	}
+
 	 
 		/**
 		 * 生成随机字符串
@@ -284,7 +287,7 @@ public class CupsATService {
 		 * @param length
 		 * @return
 		 */
-	public String getRandomString(int length) { // length表示生成字符串的长度
+	public  String getRandomString(int length) { // length表示生成字符串的长度
 			String base = "abcdefghijklmnopqrstuvwxyz0123456789";
 			Random random = new Random();
 			StringBuffer sb = new StringBuffer();
@@ -309,6 +312,7 @@ public class CupsATService {
 	 public  Map<String , String> getPackMessage(Map<String, Object> merMsg){
 		 String method=merMsg.get("method").toString();
 		 String channelId=merMsg.get("channel_id").toString();
+		 String isCredit=String.valueOf(merMsg.get("iscredit")==null?"":merMsg.get("iscredit"));
 		 Map<String, String> req =pubReq(method,channelId);
 		 if ("ant.merchant.expand.indirect.create".equals(method)) {
 			 //商户入驻
@@ -328,12 +332,25 @@ public class CupsATService {
 //				childReq.put("mcc",  cates[0]); 
 				childReq.put("source",  merMsg.get("appid")); 
 				childReq.put("org_pid", pid); //pid  hrt:2088102175090441   銀聯： 2088102170346152
+				//有营业执照号的时候上送本字段
+				if (null!=merMsg.get("minfo2")&&!"".equals(merMsg.get("minfo2")+"")&&!"null".equals(merMsg.get("minfo2")+"")) {
+					childReq.put("business_license", merMsg.get("minfo2")); 
+					childReq.put("business_license_type", "NATIONAL_LEGAL");//pid  hrt:2088102175090441
+				}
 				
 				JSONObject contact_info=new JSONObject(); 
 				JSONArray bb=new JSONArray();
  				contact_info.put("name",  merMsg.get("contactname"));
 				contact_info.put("tag", "08");
 				contact_info.put("type", "OTHER");
+				contact_info.put("email", "saoma@hrtpayment.com");
+				if (null!=merMsg.get("contactmobile")&&!"".equals(merMsg.get("contactmobile"))||null!=merMsg.get("contactmobile")) {
+					contact_info.put("mobile",merMsg.get("contactmobile") );
+				}
+				//身份证号字段不为空时上送本字段
+				if (null!=merMsg.get("minfo1")&&!"".equals(merMsg.get("minfo1"))&&!"null".equals(merMsg.get("minfo1"))) {
+					contact_info.put("id_card_no",merMsg.get("minfo1") );
+				}
 				bb.add(contact_info);
 				childReq.put("contact_info",bb);// contact_info);
 				JSONObject address_info=new JSONObject(); 
@@ -344,6 +361,15 @@ public class CupsATService {
 				address_info.put("province_code", merMsg.get("provincecode"));
 				aa.add(address_info);
 				childReq.put("address_info",aa);
+				JSONObject bankcard_info=new JSONObject(); 
+				JSONArray bankcardJson=new JSONArray();
+				//银行卡号字段不为空时上送本字段
+				if (null!=merMsg.get("CONTACTACCNO")&&!"".equals(merMsg.get("CONTACTACCNO"))&&!"null".equals(merMsg.get("CONTACTACCNO"))) {
+					bankcard_info.put("card_no", merMsg.get("CONTACTACCNO"));
+					bankcard_info.put("card_name", merMsg.get("contactname"));
+					bankcardJson.add(bankcard_info);
+					childReq.put("bankcard_info",bankcardJson);
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());//JSONObject.toJSONString(childReq ));
 		 }else if("ant.merchant.expand.indirect.modify".equals(method)){
 			//商户入驻修改
@@ -362,14 +388,24 @@ public class CupsATService {
 				childReq.put("category_id",  cates[0]);
 				childReq.put("mcc",  cates[1]); 
 				childReq.put("source", pid); //pid  hrt:2088102175090441   銀聯： 2088102170346152
-				childReq.put("business_license_type", "NATIONAL_LEGAL");
-				childReq.put("business_license",  merMsg.get("MINFO2"));
+				childReq.put("org_pid", pid); 
+				//有营业执照号的时候上送本字段
+				if (null!=merMsg.get("minfo2")&&!"".equals(merMsg.get("minfo2")+"")&&!"null".equals(merMsg.get("minfo2")+"")) {
+					childReq.put("business_license", merMsg.get("minfo2")); 
+					childReq.put("business_license_type", "NATIONAL_LEGAL");//pid  hrt:2088102175090441
+				}
 				JSONObject contact_info=new JSONObject(); 
 				JSONArray bb=new JSONArray();
  				contact_info.put("name",  merMsg.get("contactname"));
 				contact_info.put("tag", "08");
 				contact_info.put("type", "LEGAL_PERSON");
-				contact_info.put("id_card_no", merMsg.get("MINFO1"));
+				//身份证号字段不为空时上送本字段
+				if (null!=merMsg.get("minfo1")&&!"".equals(merMsg.get("minfo1")+"")&&!"null".equals(merMsg.get("minfo1")+"")) {
+					contact_info.put("id_card_no",merMsg.get("minfo1") );
+				}
+				if (null!=merMsg.get("contactmobile")&&!"".equals(merMsg.get("contactmobile")+"")&&!"null".equals(merMsg.get("contactmobile")+"")) {
+					contact_info.put("phone",  merMsg.get("contactmobile"));
+				}
 				bb.add(contact_info);
 				childReq.put("contact_info",bb);// contact_info);
 				JSONObject address_info=new JSONObject(); 
@@ -380,12 +416,23 @@ public class CupsATService {
 				address_info.put("province_code", merMsg.get("provincecode"));
 				aa.add(address_info);
 				childReq.put("address_info",aa);
+				JSONObject bankcard_info=new JSONObject(); 
+				JSONArray bankcardJson=new JSONArray();
+				//银行卡号字段不为空时上送本字段
+				if (null!=merMsg.get("CONTACTACCNO")&&!"".equals(merMsg.get("CONTACTACCNO")+"")&&!"null".equals(merMsg.get("CONTACTACCNO")+"")) {
+					bankcard_info.put("card_no", merMsg.get("CONTACTACCNO"));
+					bankcard_info.put("card_name", merMsg.get("contactname"));
+					bankcardJson.add(bankcard_info);
+					childReq.put("bankcard_info",bankcardJson);
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());//JSO
 			 
 		 }else if ("ant.merchant.expand.indirect.query".equals(method)){
 			 //商户入驻查询
 				Map<String, Object> childReq=new TreeMap<String,Object>();
+				String pid=merMsg.get("mch_id").toString();
 				childReq.put("external_id", merMsg.get("merchantid"));
+				childReq.put("org_pid", pid); 
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.precreate".equals(method)){
 			 //扫码交易  预下单 
@@ -397,6 +444,17 @@ public class CupsATService {
 				JSONObject sub_merchant=new JSONObject(); 
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));//"2018032817054963"
 				childReq.put("sub_merchant", sub_merchant);
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//关闭信用卡、花呗功能
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.create".equals(method)){
 			 //扫码交易   下单 
@@ -409,6 +467,17 @@ public class CupsATService {
 				JSONObject sub_merchant=new JSONObject(); 
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));//"2018032817054963"
 				childReq.put("sub_merchant", sub_merchant);
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//关闭信用卡、花呗功能
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.pay".equals(method)){
 			 //条码交易 
@@ -422,6 +491,17 @@ public class CupsATService {
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));
 				childReq.put("sub_merchant", sub_merchant);
 				//childReq.put("buyer_logon_id", "irfiat4830@sandbox.com");
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//关闭信用卡、花呗功能
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.query".equals(method)){
 			 //交易查询

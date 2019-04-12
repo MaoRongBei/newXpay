@@ -1,6 +1,8 @@
 package com.hrtpayment.xpay.cupsAT.service;
 
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -95,7 +97,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		List<Map<String, Object>> list=dao.queryForList(queryOrder, order_id);
 		if (0==list.size()) {
 			logger.info("[银联-支付宝] 未找到原订单{}",order_id);
-//			throw new BusinessException(8000, "未查询到原始订单");
+			throw new BusinessException(8000, "未查询到原始订单");
 		}
 		
 		if ("1".equals(list.get(0).get("STATUS").toString())) {
@@ -122,8 +124,19 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			String bankType="";
 			if (requestMap.get("fund_bill_list")!=null) { 
 				JSONArray json=(JSONArray) JSONArray.parse(requestMap.get("fund_bill_list"));
-				JSONObject fund_bill_list=(JSONObject) json.get(0);
-				bankType=null==fund_bill_list.get("fundType")?fund_bill_list.getString("fundChannel"):fund_bill_list.getString("fundType");
+				/*
+				 * 2018-12-27  修改
+				 * 
+				 * 同时使用花呗和红包 json内不止一条
+				 * 
+				 */
+				for (int i = 0; i < json.size(); i++) {
+					JSONObject fund_bill_list=(JSONObject) json.get(i);
+					String  fundChannel=null==fund_bill_list.get("fundType")?fund_bill_list.getString("fundChannel"):fund_bill_list.getString("fundType");
+					bankType=bankType+"|"+fundChannel;
+				}
+//				JSONObject fund_bill_list=(JSONObject) json.get(0);
+//				bankType=null==fund_bill_list.get("fundType")?fund_bill_list.getString("fundChannel"):fund_bill_list.getString("fundType");
 			}
 			/**
 			 * TO-DO
@@ -153,9 +166,11 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				list.get(0).put("TXNLEVEL", txnLevel);
 				list.get(0).put("RTNCODE", rtncode);
 				list.get(0).put("RTNMSG",  rtncode);
-				list.get(0).put("BANKTYPE", payType);
+				//2019-02-14 修改  返回banktype字段内容为 支付银行通道缩写
+				list.get(0).put("BANKTYPE", bankType);
+//				list.get(0).put("BANKTYPE", payType);
 				list.get(0).put("USERID", buyer_logon_id);
-				
+				list.get(0).put("SUCTIME", requestMap.get("gmt_payment"));//交易完成时间  gmt_payment 格式 yyyy-mm-dd hh24:mi:ss
 				notify.sendNotify(list.get(0));
 			}else if (count==0) {
 				logger.info("[银联-支付宝]异步通知-交易{}未做更新操作，原交易可能成功",order_id);
@@ -165,6 +180,14 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		}else if ("TRADE_FINIISHED".equals(rtncode)) {
 			logger.info("[银联-支付宝]异步通知-交易{}完结。",order_id);
 		}else if ("TRADE_CLOSED".equals(rtncode)) {
+			/*
+			 * 2018-12-13  修改
+			 * 
+			 * 银联支付宝接收订单关闭异步通知，更改对应状态为5
+			 * 
+			 */
+			String closeSql="update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate ,status='5'  where mer_orderid=? and status not in ('5','1')";
+			dao.update(closeSql, rtncode,"订单已关闭",order_id);
 			logger.info("[银联-支付宝]异步通知-交易{}关闭。",order_id);
 		}else if ("WAIT_BUYER_PAY".equals(rtncode)) {
 			logger.info("[银联-支付宝]异步通知-交易{}需要进行查询操作。",order_id);
@@ -181,7 +204,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 	 * @return
 	 */
 	public String cupsAliBsPay(HrtPayXmlBean bean,String unno, String mid, int fiid, String payway, String orderid, String merchantCode,
-			 String authCode, BigDecimal amount, String subject, String tid,String channelId) throws BusinessException {
+			 String authCode, BigDecimal amount, String subject, String tid,String channelId,String isCredit) throws BusinessException {
  
 		/**
 		 * 1.验重 订单号
@@ -198,7 +221,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 	 
 		
 		String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-				+ "status, cdate, lmdate,unno,mer_tid,trantype,bankmid) values((S_PG_Wechat_Txn.nextval),?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,?)";
+				+ "status, cdate, lmdate,unno,mer_tid,trantype,bankmid,trade_type) values((S_PG_Wechat_Txn.nextval),?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,?,'BS')";
 		dao.update(insertSql, fiid, orderid, subject, amount, mid, unno, tid,2, merchantCode);
 		
 		/**
@@ -212,6 +235,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		merMsg.put("orderid",orderid);
 		merMsg.put("subject",subject);
 		merMsg.put("channel_id", channelId);
+		merMsg.put("iscredit", isCredit);
 		merMsg.put("method","alipay.trade.pay");
 		Map<String, String> req=cupsService.getPackMessage(merMsg);
 		 
@@ -223,7 +247,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			logger.info(res+"<-----[银联-支付宝]条码支付返回报文");
 		} catch (Exception e) {
 			RedisUtil.addFailCountByRedis(1);
-			logger.error("[银联-支付宝]条码支付网络错误:{}，订单号{}", e,orderid);
+			logger.error("[银联-支付宝]条码支付网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 			return "R";
 		}
 		JSONObject respJson=JSONObject.parseObject(res);
@@ -239,7 +263,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_pay_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】条码支付返回报文 验签失败");
+			logger.info("【银联-支付宝】条码支付返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -270,9 +294,17 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?, lmdate=sysdate ,bk_orderid=?  where mer_orderid=? ";
 			dao.update(updateSql, "USERPAYING",rtnMsg, resMap.get("trade_no"), resMap.get("out_trade_no"));
 			return "R";
+		}else if("20000".equals(rtnCode)){
+			String updateSql="update pg_wechat_txn set respcode='USERPAYING' where mer_orderid=? ";
+			int count=dao.update(updateSql, orderid);
+			return "R";
+		}else if("40002".equals(rtnCode)&&"up.unknow-error".equals(resMap.get("sub_code"))){
+			String updateSql="update pg_wechat_txn set respcode='USERPAYING' where mer_orderid=? ";
+			int count=dao.update(updateSql, orderid);
+			return "R";
 		}else{
 			rtnMsg=(resMap.get("sub_msg")==null?resMap.get("msg"):resMap.get("sub_msg")).toString();
-			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where mer_orderid=? ";
+			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where status!='1' and mer_orderid=? ";
 			int count=dao.update(updateSql, rtnCode,rtnMsg, orderid);
 			return "E";
 		}
@@ -289,7 +321,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 	 *
 	 */
 	public String cupsAliPay(String unno, String mid, String bankMid, String subject, BigDecimal amount,
-			int fiid, String payWay,String orderid, String tid,  String hybRate, String hybType,String channelId) throws BusinessException { 
+			int fiid, String payWay,String orderid, String tid,  String hybRate, String hybType,String channelId,String isCredit) throws BusinessException { 
 //		String reqUrl=aliUrl;
 		
 		/**
@@ -305,8 +337,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 * 
 		 */
 		String sql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-			+ " bankmid ,status, cdate, lmdate,trantype,unno,mer_tid,hybType,hybRate) values "
-			+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,sysdate,sysdate,'2',?,?,?,?)";
+			+ " bankmid ,status, cdate, lmdate,trantype,unno,mer_tid,hybType,hybRate,trade_type) values "
+			+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,sysdate,sysdate,'2',?,?,?,?,'ZS')";
 		dao.update(sql, fiid, orderid, subject, amount, mid, bankMid, 0, unno, tid, hybType, hybRate);
 		
 		/**
@@ -319,6 +351,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		merMsg.put("orderid",orderid);
 		merMsg.put("subject",subject);
 		merMsg.put("channel_id", channelId);
+		merMsg.put("iscredit",isCredit);
 		merMsg.put("method","alipay.trade.precreate");
 		Map<String, String> req=cupsService.getPackMessage(merMsg); 
 		
@@ -329,7 +362,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			logger.info(res+"<-----[银联-支付宝]获取二维码返回报文");
 		} catch (Exception e) {
 			RedisUtil.addFailCountByRedis(1);
-			logger.error("[银联-支付宝]获取二维码网络错误:{}，订单号{}", e,orderid);
+			logger.error("[银联-支付宝]获取二维码网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 			throw new BusinessException(1002, "获取信息网络错误");
 		} 
 		
@@ -348,7 +381,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_precreate_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】获取二维码返回报文 验签失败");
+			logger.info("【银联-支付宝】获取二维码返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -362,7 +395,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			String qrCode=resMap.get("qr_code").toString();
 			if (qrCode==null||"".equals(qrCode)) {
 				RedisUtil.addFailCountByRedis(1);
-				logger.error("[银联-支付宝]获取二维码失败，订单号{},qrcode未返回", resMap.get("out_trade_no"));
+				logger.error("[银联-支付宝]获取二维码失败AT_ERROR_PARAMS，订单号{},qrcode未返回", resMap.get("out_trade_no"));
 				throw new BusinessException(8000, "订单已失效");
 			}
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,qrcode=?,lmdate=sysdate  where mer_orderid=? ";
@@ -372,7 +405,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			rtnMsg=resMap.get("sub_msg");
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where mer_orderid=? ";
 			dao.update(updateSql, rtnCode,rtnMsg, resMap.get("out_trade_no"));
-			logger.error("[银联-支付宝]获取二维码失败，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+			logger.error("[银联-支付宝]获取二维码失败AT_ERROR_PARAMS，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
 			RedisUtil.addFailCountByRedis(1);
 			throw new BusinessException(1002, "下单失败");
 		}
@@ -400,7 +433,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		    res =HttpConnectService.postForm(req,  aliUrl);
 			logger.info(res+"<------[银联-支付宝]交易查询响应信息");
 		} catch (Exception e) {
-			logger.error("[银联-支付宝]获取交易查询错误{}，订单号{}", e,orderInfo.get("mer_orderid"));
+			logger.error("[银联-支付宝]获取交易查询错误AT_ERROR_NET{}，订单号{}", e,orderInfo.get("mer_orderid"));
+			RedisUtil.addFailCountByRedis(1);
 			throw new BusinessException(1002, "获取信息网络错误");
 		}
 		JSONObject respJson=JSONObject.parseObject(res);
@@ -415,7 +449,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_query_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】查询返回报文 验签失败");
+			logger.info("【银联-支付宝】查询返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -426,14 +460,25 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		String rtnMsg=resMap.get("msg");
 		String trade_status=resMap.get("trade_status");
 		String buyer_logon_id=resMap.get("buyer_logon_id");
-    
+		String payType="";
 		if ("10000".equals(rtnCode)) {
 			String bankType="";
 			if ("TRADE_SUCCESS".equals(trade_status)) {//交易成功
 				if (resMap.get("fund_bill_list")!=null) {
 					JSONArray json = JSONArray.parseArray(JSONArray.toJSONString(resMap.get("fund_bill_list")));
-					JSONObject fund_bill_list=(JSONObject) json.get(0);
-					bankType=null==fund_bill_list.get("fund_type")?fund_bill_list.getString("fund_channel"):fund_bill_list.getString("fund_type");
+					/*
+					 * 2018-12-27  修改
+					 * 
+					 * 同时使用花呗和红包 json内不止一条
+					 * 
+					 */
+					for (int i = 0; i < json.size(); i++) {
+						JSONObject fund_bill_list=(JSONObject) json.get(i);
+						String  fundChannel=null==fund_bill_list.get("fund_type")?fund_bill_list.getString("fund_channel"):fund_bill_list.getString("fund_type");
+						bankType=bankType+"|"+fundChannel;
+					}
+//					JSONObject fund_bill_list=(JSONObject) json.get(0);
+//					bankType=null==fund_bill_list.get("fund_type")?fund_bill_list.getString("fund_channel"):fund_bill_list.getString("fund_type");
 				}
 				/**
 				 * TO-DO
@@ -442,7 +487,6 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				 * 包含CREDIT  paytype=2  贷记卡
 				 * 其它不为空的情况  paytype=3  
 				 */
-				String payType="";
 				if (!"".equals(bankType)&&null!=bankType) {
 					if (bankType.contains("DEBIT")) {
 						payType="1";
@@ -470,10 +514,14 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					orderInfo.put("TXNLEVEL", txnLevel);
 					orderInfo.put("RTNCODE", trade_status);
 					orderInfo.put("RTNMSG",  trade_status);
-					orderInfo.put("BANKTYPE", payType);
+					//2019-02-14 修改  返回banktype字段内容为 支付银行通道缩写
+					orderInfo.put("BANKTYPE", bankType);//
+//					orderInfo.put("BANKTYPE", payType);
 					orderInfo.put("USERID", buyer_logon_id);
+					orderInfo.put("SUCTIME", resMap.get("send_pay_date"));//交易完成时间   send_pay_date格式：yyyy-mm-dd hh24:mi:ss
 					if(bean!=null){
 						bean.setUserId(buyer_logon_id);
+						bean.setPayOrderTime(resMap.get("send_pay_date"));
 					}
 					notify.sendNotify(orderInfo);
 				}
@@ -483,11 +531,11 @@ public class CupsATPayService implements WxpayService , AlipayService{
 						+ "  where  mer_orderid=?";
 				dao.update(updateSql,"USERPAYING",trade_status,    resMap.get("out_trade_no"));
 				trade_status=  "DOING";
-			}else if ("TRADE_CLOSED".equals(trade_status)) {//交易超时，或完全退款
-				String updateSql = "update pg_wechat_txn set respcode=?,   respmsg=?  "
-						+ "  where   mer_orderid=?";
+			}else if ("TRADE_CLOSED".equals(trade_status)) {//交易超时，或完全退款  或订单手动关闭
+				String updateSql = "update pg_wechat_txn set respcode=?,   respmsg=? , status='5'"
+						+ "  where   mer_orderid=? and status not in ('5','1')";
 				dao.update(updateSql,trade_status,trade_status,    resMap.get("out_trade_no"));
-				trade_status=  "FAIL";
+				trade_status=  "CLOSED";
 			}else if ("TRADE_FINISHED".equals(trade_status)) {//交易结束，不可退款
 				String updateSql = "update pg_wechat_txn set respcode=?,   respmsg=?  "
 						+ "  where   mer_orderid=?";
@@ -501,24 +549,46 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				if (bean!=null) {
 					bean.setRtnCode(rtnCode);
 					bean.setRtnMsg(rtnMsg);
-					bean.setBankType(bankType);	
+//					bean.setBankType(payType);
+					bean.setBankType(bankType);
 					bean.setUserId(buyer_logon_id==null||"".equals(buyer_logon_id)||"null".equals(buyer_logon_id)?"":buyer_logon_id);
 				}
 			} catch (Exception e) {
 			    logger.info("装入bean出错"+e.getMessage());
 			}
 			return trade_status;
-		}else if ("10003".equals(rtnCode)) {
+		}else if ("10003".equals(rtnCode)||"20000".equals(rtnCode)) {
 			String updateSql = "update pg_wechat_txn set respcode=?,  respmsg=?,bk_orderid=?  ,status=0 "
 					+ "   where status!='1' and mer_orderid=?";
 			dao.update(updateSql, "USERPAYING", rtnMsg, resMap.get("trade_no"),  resMap.get("out_trade_no"));
 			logger.error("[银联-支付宝]交易查询，订单号{}处理中状态,返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
 		    return "DOING";
-		}else{
-		    rtnMsg=resMap.get("sub_msg");
-			String updateSql = "update pg_wechat_txn set   respmsg=?,bk_orderid=? , txnLevel=?"
+		}else if ("40004".equals(rtnCode)&&"ACQ.TRADE_NOT_EXIST".equals(resMap.get("sub_code"))&&"交易不存在".equals(resMap.get("sub_msg"))) {
+			int startTime=(orderInfo.get("unno")==null?"qrpay":orderInfo.get("unno").toString()).length();
+			String orderTime= orderInfo.get("mer_orderid").toString().substring(startTime,startTime+14);
+			Calendar now = Calendar.getInstance(); 
+			now.add(Calendar.MINUTE, -10);
+			SimpleDateFormat sFormat=new SimpleDateFormat(DateUtil.FORMAT_TRADETIME);
+			String tenMinBeforeStr=sFormat.format(now.getTime());
+			if (orderTime.compareTo(tenMinBeforeStr)>0) {
+				logger.error("[银联-支付宝]交易查询，订单号{}银行端处理结果为：订单不存在；返回处理中状态,返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+				return "DOING_TRADE_NOT_EXIST";
+			}
+			String updateSql = "update pg_wechat_txn set respcode=?,  respmsg=?,bk_orderid=? , txnLevel=?"
 					+ " ,status=6  where status!='1' and mer_orderid=?";
-			dao.update(updateSql,  rtnMsg, resMap.get("trade_no"), 1, resMap.get("out_trade_no"));
+			dao.update(updateSql,rtnCode,  rtnMsg, resMap.get("trade_no"), 1, resMap.get("out_trade_no"));
+			logger.error("[银联-支付宝]交易查询，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+
+		    return "ERROR";
+		}else{
+			rtnMsg=resMap.get("sub_msg");
+			if (String.valueOf(resMap.get("sub_code")).contains("ACQ.SYSTEM_ERROR")) {
+				logger.error("[银联-支付宝]交易查询 AT_ERROR_SYSTEMERROR{},返回{}，{}", resMap.get("out_trade_no"), rtnCode,  resMap.get("sub_code")+rtnMsg); 
+				return "DOING";	
+			}
+			String updateSql = "update pg_wechat_txn set respcode=?,  respmsg=?,bk_orderid=? , txnLevel=?"
+					+ " ,status=6  where status!='1' and mer_orderid=?";
+			dao.update(updateSql,rtnCode,  rtnMsg, resMap.get("trade_no"), 1, resMap.get("out_trade_no"));
 			logger.error("[银联-支付宝]交易查询，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
 			throw new BusinessException(1002, "查询失败");
 		}
@@ -548,7 +618,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 	 		res = HttpConnectService.postForm(req, aliUrl);
 			logger.info(res+"<-----[银联-支付宝]获取二维码返回报文");
 		} catch (Exception e) {
-			logger.error("[银联-支付宝]获取二维码网络错误:{}，订单号{}", e,orderid);
+			logger.error("[银联-支付宝]获取二维码网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 			RedisUtil.addFailCountByRedis(1);
 			throw new BusinessException(1002, "获取信息网络错误");
 		} 
@@ -565,7 +635,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_precreate_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】 获取二维码返回报文 验签失败");
+			logger.info("【银联-支付宝】 获取二维码返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -579,7 +649,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			String qrCode=resMap.get("qr_code").toString();
 			if (qrCode==null||"".equals(qrCode)) {
 				RedisUtil.addFailCountByRedis(1);
-				logger.error("[银联-支付宝]获取二维码失败，订单号{},qrcode未返回", resMap.get("out_trade_no"));
+				logger.error("[银联-支付宝]获取二维码失败AT_ERROR_PARAMS，订单号{},qrcode未返回", resMap.get("out_trade_no"));
 				throw new BusinessException(8000, "订单已失效");
 			}
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,qrcode=?,lmdate=sysdate  where mer_orderid=? ";
@@ -589,7 +659,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			rtnMsg=resMap.get("sub_msg");
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where mer_orderid=? ";
 			dao.update(updateSql, rtnCode,rtnMsg, resMap.get("out_trade_no"));
-			logger.error("[银联-支付宝]获取二维码失败，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+			logger.error("[银联-支付宝]获取二维码失败AT_ERROR_PARAMS，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
 			RedisUtil.addFailCountByRedis(1);
 			throw new BusinessException(1002, "下单失败");
 		}
@@ -619,7 +689,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		    res =HttpConnectService.postForm(req,  aliUrl);
 			logger.info(res+"<-----[银联-支付宝]退款响应信息");
 		} catch (Exception e) {
-			logger.error("[银联-支付宝]退款请求异常{}，订单号{}", e,oriOrderInfo.get("mer_orderid"));
+			logger.error("[银联-支付宝]退款请求异常AT_ERROR_NET {}，订单号{}", e,oriOrderInfo.get("mer_orderid"));
+			RedisUtil.addFailCountByRedis(1);
 			throw new BusinessException(1002, "获取信息网络错误");
 		}
 		JSONObject jsonRes =new JSONObject();
@@ -635,7 +706,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_refund_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】 退款返回报文 验签失败");
+			logger.info("【银联-支付宝】 退款返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -655,16 +726,26 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			jsonRes.put("errcode", "R");
 			jsonRes.put("rtmsg", "退款成功-等待查询");
 		}else{
-			String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,"
-					+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
-					+ " txnLevel=? ,status='6'"
-					+ " where mer_orderid=? ";
-			rtnCode=resMap.get("code");
-			rtnMsg=resMap.get("sub_msg"); 
-		    count = dao.update(updateSql, rtnCode, rtnMsg, 0,  orderId);
-			jsonRes.put("errcode", "E");
-			jsonRes.put("rtmsg", "退款失败");
-			logger.error("[银联-支付宝]退款失败状态订单号{},状态：{},{}", orderId, rtnCode, rtnMsg);
+			if (String.valueOf(resMap.get("sub_code")).contains("ACQ.SYSTEM_ERROR")) {
+				String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,time_end"
+						+ "=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,txnLevel=? ,bk_orderid=? "
+						+ ",status='0' where mer_orderid=?";
+			    count = dao.update(updateSql, rtnCode, rtnMsg, 0, resMap.get("trade_no").toString(), orderId);
+			    logger.error("[银联-支付宝]退款查询 AT_ERROR_SYSTEMERROR{},返回{}，{}", resMap.get("out_trade_no"), rtnCode,  resMap.get("sub_code")+rtnMsg); 
+				jsonRes.put("errcode", "R");
+				jsonRes.put("rtmsg", "退款异常-等待查询");
+			}else{
+				String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,"
+						+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
+						+ " txnLevel=? ,status='6'"
+						+ " where mer_orderid=? ";
+				rtnCode=resMap.get("code");
+				rtnMsg=resMap.get("sub_msg"); 
+			    count = dao.update(updateSql, rtnCode, rtnMsg, 0,  orderId);
+				jsonRes.put("errcode", "E");
+				jsonRes.put("rtmsg", "退款失败");
+				logger.error("[银联-支付宝]退款失败状态订单号{},状态：{},{}", orderId, rtnCode, rtnMsg);
+			}
 		} 
 		
 		logger.error("[银联-支付宝]-退款订单号更新{}，订单号{}",count, orderId);
@@ -698,7 +779,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		    res =HttpConnectService.postForm(req,  aliUrl);
   			logger.info("[银联-支付宝]退款查询  响应信息----->"+res);
   		} catch (Exception e) {
-  			logger.error("[银联-支付宝]退款查询  请求异常{}，订单号{}", e,orderInfo.get("mer_orderid"));
+  			logger.error("[银联-支付宝]退款查询  请求异常AT_ERROR_NET {}，订单号{}", e,orderInfo.get("mer_orderid"));
   			RedisUtil.addFailCountByRedis(1);
   			throw new BusinessException(1002, "获取信息网络错误");
   		}
@@ -714,7 +795,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_fastpay_refund_query_response").toString();
   		vertifySign.put("verSign", verSign);
   		if (!cupsService.checkSignForAlipay(vertifySign)) {
-			logger.info("【银联-支付宝】 退款查询返回报文 验签失败");
+			logger.info("【银联-支付宝】 退款查询返回报文 验签失败AT_ERROR_VERTIFYSIGN");
 			RedisUtil.addFailCountByRedis(1);
 			throw new HrtBusinessException(8000,"交易失败");
 		}
@@ -723,13 +804,22 @@ public class CupsATPayService implements WxpayService , AlipayService{
   		 */
   		String rtnCode=resMap.get("code").toString();
   		String rtnMsg=resMap.get("msg").toString(); 
-  		
+  		String refund_amount=resMap.get("refund_amount");
   		if ("10000".equals(rtnCode)) {
-  			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?, status=1 ,lmdate=sysdate"
+  			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?, status=? ,lmdate=sysdate"
   					+ "  where  mer_orderid=? ";
-  			dao.update(updateSql, rtnCode,rtnMsg,orderInfo.get("mer_orderid"));
-  			return "SUCCESS";
+  		    if (null==refund_amount ||"".equals(refund_amount)||"null".equals(refund_amount)) {
+  		    	dao.update(updateSql, rtnCode,"退款失败-交易已退款","6",orderInfo.get("mer_orderid"));
+  		    	return "FAIL";
+			}else{
+				dao.update(updateSql, rtnCode,rtnMsg,"1",orderInfo.get("mer_orderid"));
+				return "SUCCESS";
+			}
 		}else{
+			if (String.valueOf(resMap.get("sub_code")).contains("ACQ.SYSTEM_ERROR")) {
+				logger.error("[银联-支付宝]退款查询 AT_ERROR_SYSTEMERROR{},返回{}，{}", resMap.get("out_trade_no"), rtnCode,  resMap.get("sub_code")+rtnMsg); 
+				return "DOING";	
+			}
 			String code=resMap.get("code");
 			String subMsg=resMap.get("sub_msg");
 			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?, status=0 ,lmdate=sysdate"
@@ -747,9 +837,12 @@ public class CupsATPayService implements WxpayService , AlipayService{
   	 * @return
   	 * @throws BusinessException
   	 */
-        public void  cupsAliClosed(String orderid) throws BusinessException {
+        public String cupsAliClosed(Map<String, Object> closeOrder) throws BusinessException {
+        String channel_id =String.valueOf(closeOrder.get("channel_id"));
+        String orderid= String.valueOf(closeOrder.get("mer_orderid"));
       	Map<String, Object> orderInfo=new  HashMap<String, Object>();
       	orderInfo.put("method", "alipay.trade.close");
+      	orderInfo.put("channel_id",channel_id);
       	orderInfo.put("mer_orderid",orderid);
       	
       	Map<String, String> req=cupsService.getPackMessage(orderInfo);
@@ -759,7 +852,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
     		    res =HttpConnectService.postForm(req,  aliUrl);
     			logger.info("[银联-支付宝]关闭响应信息----->"+res);
     		} catch (Exception e) {
-    			logger.error("[银联-支付宝]关闭请求异常{}，订单号{}", e,orderInfo.get("mer_orderid"));
+    			logger.error("[银联-支付宝]关闭请求异常AT_ERROR_NET {}，订单号{}", e,orderInfo.get("mer_orderid"));
+    			RedisUtil.addFailCountByRedis(1);
     			throw new BusinessException(1002, "获取信息网络错误");
     		}
     		JSONObject respJson=JSONObject.parseObject(res);
@@ -768,6 +862,37 @@ public class CupsATPayService implements WxpayService , AlipayService{
     		logger.info("respMap:"+resMap);
     		String rtnCode=resMap.get("code").toString();
     		String rtnMsg=resMap.get("msg").toString(); 
+    		/* 
+             *
+             * 2018-12-14 修改 
+             * 
+             * 当code=10000 msg=Success 时  订单关闭成功  修改订单 respcode= code  respmsg=msg status=0 lmdate=sysdate
+             * 当code<>10000 时   订单关闭异常， 修改订单   respcode= USERPAYING  respmsg=msg|关单操作异常  status=0 lmdate=sysdate
+             * 返回 DOING 等待查询  或者 等待异步通知 
+             * 
+    		 */
+    		
+    		String closeOrderSql="update pg_wechat_txn set respcode=?,respmsg=?,status='0',lmdate=sysdate where mer_orderid=? and status not in('5','1')";
+//    		String status="0";
+    		if ("10000".equals(rtnCode)) {
+//    			rtnMsg="SUCCESS";
+    			rtnCode="USERPAYING";
+    			logger.info("[银联-支付宝]订单关闭 ---订单{}已关闭", orderid);
+    			rtnMsg=rtnMsg+"|订单关闭等待查询";
+			}else{
+				rtnCode="USERPAYING";
+    			rtnMsg=rtnMsg+"|关单操作异常";
+			}
+    		int count=dao.update(closeOrderSql, rtnCode,rtnMsg,orderid);
+    		if (count==0) {
+    			logger.info("[银联-支付宝]订单关闭 ---原订单{}已经关闭", orderid);
+			}else if (count>1) {
+				logger.info("[银联-支付宝]订单关闭 ---存在多笔重名订单{}  AT_ERROR", orderid);
+				RedisUtil.addFailCountByRedis(1);
+			}else {
+				logger.info("[银联-支付宝]订单关闭 ---订单{}关闭成状态更新{}：{}", orderid,rtnCode,resMap.get("msg").toString());
+			}
+    		return "DOING";
   	}
     
         
@@ -778,10 +903,13 @@ public class CupsATPayService implements WxpayService , AlipayService{
     	 * @return
     	 * @throws BusinessException
     	 */
-          public void  cupsAliCancel(String orderid) throws BusinessException {
+          public String  cupsAliCancel(Map<String, Object> cancelOrder) throws BusinessException {
         	Map<String, Object> orderInfo=new  HashMap<String, Object>();
+        	String channel_id =String.valueOf(cancelOrder.get("channel_id"));
+ 	        String orderid= String.valueOf(cancelOrder.get("mer_orderid"));
         	orderInfo.put("method", "alipay.trade.cancel");
         	orderInfo.put("mer_orderid",orderid);
+        	orderInfo.put("channel_id",channel_id);
         	
         	Map<String, String> req=cupsService.getPackMessage(orderInfo);
       		String res=null;
@@ -798,7 +926,31 @@ public class CupsATPayService implements WxpayService , AlipayService{
       		Map<String, String> resMap=JSONObject.toJavaObject(JSONObject.parseObject(respJson.get("alipay_trade_cancel_response").toString()), Map.class);
       		logger.info("respMap:"+resMap);
       		String rtnCode=resMap.get("code").toString();
-      		String rtnMsg=resMap.get("msg").toString(); 
+      		String rtnMsg=resMap.get("msg").toString();
+      		String recall=resMap.get("retry_flag").toString();
+    		if ("10000".equals(rtnCode) &&"N".equals(recall)) {
+	    		String updateCancelSql="update pg_wechat_txn set lmdate=sysdate,status='7',respcode=?,respmsg=? where status not in ('1','7','5') and  mer_orderid=? ";
+	     		rtnMsg=rtnMsg+"|订单已撤销";
+	     		int count=dao.update(updateCancelSql, rtnCode,rtnMsg,orderid);
+	     		if (count==0) {
+	     			logger.info("[银联-支付宝]订单撤销---订单{}撤销更新记录为0", orderid);
+	     			return "DOING";
+	    		}else if (count>1) {
+	    			logger.error("[银联-支付宝]订单撤销操作---存在多笔订单{}，请核实AT_ERROR",orderid);
+	    			RedisUtil.addFailCountByRedis(1);
+	    			return "DOING";
+	    		}else{
+	    			logger.info("[银联-支付宝]订单撤销---订单{}已撤销", orderid,rtnCode,rtnMsg);
+	    			return "SUCCESS";
+	    		}
+    		}else  if ("10000".equals(rtnCode) &&"Y".equals(recall)) {
+    			logger.info("[银联-支付宝]订单撤销 结果待确认， 订单号 {}。",orderid);
+    			return "DOING";
+    		}else{
+     			rtnMsg=rtnMsg+"|订单撤销操作异常";
+     			logger.info("[银联-支付宝]订单撤销 结果待确认， 订单号 {}：{}。",orderid,rtnMsg);
+     			return "DOING";
+    		}
     	}
           
           /**
@@ -847,7 +999,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
       	 		res = HttpConnectService.postForm(req, aliUrl);
       			logger.info("[银联-支付宝]获取创建订单返回报文：{}",res);
       		} catch (Exception e) {
-      			logger.error("[银联-支付宝]获取创建订单网络错误:{}，订单号{}", e,orderid);
+      			logger.error("[银联-支付宝]获取创建订单网络错误 AT_ERROR_NET:{}，订单号{}", e,orderid);
+      			RedisUtil.addFailCountByRedis(1);
       			throw new BusinessException(1002, "获取信息网络错误");
       		} 
       		
@@ -861,7 +1014,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       			String qrCode=resMap.get("qr_code").toString();
       			if (qrCode==null||"".equals(qrCode)) {
       				RedisUtil.addFailCountByRedis(1);
-      				logger.error("[银联-支付宝]获取创建订单失败，订单号{},qrcode未返回", resMap.get("out_trade_no"));
+      				logger.error("[银联-支付宝]获取创建订单失败 AT_ERROR_PARAMS，订单号{},qrcode未返回", resMap.get("out_trade_no"));
       				throw new BusinessException(8000, "订单已失效");
       			}
       			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,qrcode=?,lmdate=sysdate  where mer_orderid=? ";
@@ -871,7 +1024,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       			rtnMsg=resMap.get("sub_msg");
       			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where mer_orderid=? ";
       			dao.update(updateSql, rtnCode,rtnMsg, resMap.get("out_trade_no"));
-      			logger.error("[银联-支付宝]获取创建订单失败，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+      			logger.error("[银联-支付宝]获取创建订单失败AT_ERROR_PARAMS，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
       			RedisUtil.addFailCountByRedis(1);
       			throw new BusinessException(1002, "下单失败");
       		}
@@ -908,7 +1061,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		}
 
 		@Override
-		public String getAlipayPayInfo(String orderid, String openid, String userid) {
+		public String getAlipayPayInfo(String orderid, String openid, String userid,String iscredit) {
 			String querySql="select w.bankmid, w.detail,w.txnamt,w.detail,w.mer_tid,w.status,w.trantype,w.detail,bm.channel_id "
 					+ "  from pg_wechat_txn w,bank_merregister bm"
      				+ " where bm.merchantcode=w.bankmid and bm.fiid=w.fiid and  mer_orderid =?";
@@ -937,6 +1090,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 	  		merMsg.put("buyer_id", userid);
 	  		merMsg.put("channel_id", map.get("channel_id"));
       		merMsg.put("method","alipay.trade.create");
+      		merMsg.put("iscredit", iscredit);
       		Map<String, String> req=cupsService.getPackMessage(merMsg); 
       		
       		String res=null;
@@ -945,7 +1099,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
       			res = HttpConnectService.postForm(req, aliUrl);
       			logger.info("[银联-支付宝]服务窗支付获取创建订单返回报文：{}",res);
       		} catch (Exception e) {
-      			logger.error("[银联-支付宝]服务窗支付获取创建订单网络错误:{}，订单号{}", e,orderid);
+      			logger.error("[银联-支付宝]服务窗支付获取创建订单网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
+      			RedisUtil.addFailCountByRedis(1);
       			throw new HrtBusinessException(1002, "获取信息网络错误");
       		} 
       		
@@ -963,7 +1118,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       		String verSign=net.sf.json.JSONObject.fromObject(res).get("alipay_trade_create_response").toString();
       		vertifySign.put("verSign", verSign);
       		if (!cupsService.checkSignForAlipay(vertifySign)) {
-    			logger.info("【银联-支付宝】  服务窗模式交易返回报文 验签失败");
+    			logger.info("【银联-支付宝】  服务窗模式交易返回报文 验签失败AT_ERROR_VERTIFYSIGN");
     			RedisUtil.addFailCountByRedis(1);
     			throw new HrtBusinessException(8000,"交易失败");
     		}
@@ -977,7 +1132,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       			String trade_no=resMap.get("trade_no").toString();
       			if (trade_no==null||"".equals(trade_no)) {
       				RedisUtil.addFailCountByRedis(1);
-      				logger.error("[银联-支付宝]获取创建订单失败，订单号{},qrcode未返回", resMap.get("out_trade_no"));
+      				logger.error("[银联-支付宝]获取创建订单失败AT_ERROR_PARAMS，订单号{},qrcode未返回", resMap.get("out_trade_no"));
       				throw new HrtBusinessException(8000, "订单已失效");
       			}
       			String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,qrcode=?,lmdate=sysdate  where mer_orderid=? and status<>'1' ";
@@ -987,7 +1142,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       			rtnMsg=resMap.get("sub_msg");
       			String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,status='6'  where mer_orderid=?  and status<>'1'  ";
       			dao.update(updateSql, rtnCode,rtnMsg, resMap.get("out_trade_no"));
-      			logger.error("[银联-支付宝]获取创建订单失败，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
+      			logger.error("[银联-支付宝]获取创建订单失败AT_ERROR_PARAMS，订单号{},返回{}，{}", resMap.get("out_trade_no"), rtnCode, rtnMsg);
       			RedisUtil.addFailCountByRedis(1);
       			throw new HrtBusinessException(1002, "下单失败");
       		}
@@ -1027,7 +1182,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
       	}
         
          @Override
-  		public String getWxpayPayInfo(String orderid, String openid) {
+  		public String getWxpayPayInfo(String orderid, String openid,String isCredit) {
         	 String querySql="select w.bankmid, w.detail,w.txnamt,w.detail,w.mer_tid,w.status,w.trantype,w.detail ,"
         	 		+ " bm.channel_id,bm.mch_id,bm.appid "
         	 		+ " from pg_wechat_txn w, bank_merregister bm"
@@ -1066,7 +1221,17 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			merMsg.put("out_trade_no",orderid);//订单编号
 			merMsg.put("notify_url", wxNotifyUrl);
 			merMsg.put("spbill_create_ip","127.0.0.1");//调用方法的机器的ip
-//			merMsg.put("idc_flag", "10");//IDC 具体选择哪个？
+			/* 
+			 * 2018-12-06  修改
+			 * 
+			 * 根据isCredit判断该商户是否可以使用贷记卡交易
+			 * 1 可以  9 不可以
+			 *  
+			 */
+			if ("9".equals(isCredit)) {
+				//不可以使用信用卡交易
+				merMsg.put("limit_pay","no_credit");//调用方法的机器的ip
+			}
 			String subAppid=getWxAppid(String.valueOf(map.get("bankmid")));
 			if (!appid.equals(subAppid)) {
 				merMsg.put("sub_appid",subAppid);//银行端提供  微信商户号
@@ -1082,7 +1247,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 			     reqStr=cupsService.mapToXml(req) ;
 			} catch (Exception e1) {
-				 logger.info("[银联-微信]公众号支付  请求报文转化异常：{}",e1.getMessage());
+				 logger.info("[银联-微信]公众号支付  请求报文转化异常 AT_ERROR_PARAMS：{}",e1.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
 				 throw new HrtBusinessException(8000, "交易异常");
 			}
@@ -1092,7 +1257,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(zsUrl, reqStr); 
 				logger.info("[银联-微信]公众号支付  返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信]公众号支付  网络错误:{}，订单号{}", e,orderid);
+				logger.error("[银联-微信]公众号支付  网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(1002, "获取信息网络错误");
 			} 
@@ -1103,7 +1268,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
 				RedisUtil.addFailCountByRedis(1);
-				logger.info("[银联-微信]公众号支付   响应报文转化异常：{}",e.getMessage());
+				logger.info("[银联-微信]公众号支付   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 			    throw new HrtBusinessException(8000, "公众号支付响应报文处理异常");
 			}
 			
@@ -1111,7 +1276,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信] ]公众号支付   响应报文验签失败，订单号：{}",orderid);
+				logger.info("[银联-微信] ]公众号支付   响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1127,24 +1292,24 @@ public class CupsATPayService implements WxpayService , AlipayService{
 //					throw new HrtBusinessException(8000, "验签失败");
 //				}
 				if ("SUCCESS".equals(respJson.get("result_code"))) {
-					String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,status='0',lmdate=sysdate  "
+					String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,status='0',lmdate=sysdate,userid=?  "
 							+ " where status='A' and mer_orderid=? ";
-					dao.update(updateSql, respJson.get("result_code"),"公众号下单成功",orderid);
+					dao.update(updateSql, respJson.get("result_code"),"公众号下单成功",openid,orderid);
 					logger.info("[银联-微信]{}公众号下单成功",orderid);
 					return respJson.get("wc_pay_data");
 				}else{
-					String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate,status='6' "
+					String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate,status='6',userid=? "
 							+ " where status='A' and mer_orderid=? ";
-					dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderid);
-					logger.info("[银联-微信]{}公众号下单失败{}：{}",orderid, respJson.get("err_code"),respJson.get("err_code_des"));
+					dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),openid,orderid);
+					logger.info("[银联-微信]{}公众号下单失败AT_ERROR_PARAMS{}：{}",orderid, respJson.get("err_code"),respJson.get("err_code_des"));
 					RedisUtil.addFailCountByRedis(1);
 					throw new HrtBusinessException(8000, "公众号下单失败");
 				}
 			}else{
-				String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate,status='6' "
+				String updateSql="update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate,status='6',userid=?  "
 						+ " where status='A' and mer_orderid=? ";
-				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_code_msg"),orderid);
-				logger.info("[银联-微信]{}公众号下单失败{}：{}",orderid, respJson.get("return_code"),respJson.get("return_code_msg"));
+				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_code_msg"),openid,orderid);
+				logger.info("[银联-微信]{}公众号下单失败AT_ERROR_PARAMS{}：{}",orderid, respJson.get("return_code"),respJson.get("return_code_msg"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "公众号下单失败");
 
@@ -1177,7 +1342,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(xml);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]异步通知   响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]异步通知   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 throw new BusinessException(8000, "异步通知报文处理异常");
 			}
 			logger.info("respMap:"+respJson);
@@ -1186,7 +1351,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信] 异步通知  响应报文验签失败，订单号：{}",order_id);
+				logger.info("[银联-微信] 异步通知  响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",order_id);
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1236,8 +1401,19 @@ public class CupsATPayService implements WxpayService , AlipayService{
 							orderInfo.put("TXNLEVEL", txnLevel);
 							orderInfo.put("RTNCODE", respJson.get("return_code"));
 							orderInfo.put("RTNMSG", respJson.get("return_code"));
-							orderInfo.put("BANKTYPE",paytype);
+							//2019-02-14 修改  返回banktype字段内容为 支付银行通道缩写
+							orderInfo.put("BANKTYPE",respJson.get("bank_type"));//paytype);
+//							orderInfo.put("BANKTYPE",paytype);
 							orderInfo.put("USERID",respJson.get("openid"));
+							//交易完成时间
+							try {
+								String time_end= DateUtil.formartDate(respJson.get("time_end")==null? new Date().toString():respJson.get("time_end"), DateUtil.FORMAT_TRADETIME, DateUtil.FORMAT_DATETIME);
+								orderInfo.put("SUCTIME", time_end);
+							} catch (Exception e) {
+								logger.info("[银联 -微信] 订单{}日期格式转换异常AT_ERROR_PARAMS",  orderInfo.get("mer_orderid"));
+								RedisUtil.addFailCountByRedis(1);
+								throw new BusinessException(8000, "时间格式转化错误");
+							}	
  							notify.sendNotify(orderInfo);
 						}
 					logger.info("[银联 -微信] 订单{}交易成功",  orderInfo.get("mer_orderid"));
@@ -1281,7 +1457,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(refundUrl, reqStr); 
 				logger.info("[银联-微信] 退款 返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信 ] 退款 网络错误:{}，订单号{}", e,oriOrderInfo.get("mer_orderid"));
+				logger.error("[银联-微信 ] 退款 网络错误AT_ERROR_NET:{}，订单号{}", e,oriOrderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1291,7 +1467,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]退款   响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]退款   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
 				 throw new BusinessException(8000, "退款 响应报文处理异常");
 			}
@@ -1299,7 +1475,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信]订单查询   响应报文验签失败，订单号：{}",oriOrderInfo.get("mer_orderid"));
+				logger.info("[银联-微信]订单查询   响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",oriOrderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1313,7 +1489,9 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_msg"),oriOrderInfo.get("mer_orderid"));
 					  
 				logger.error("[银联 -微信]  订单{} 退款 失败{}：{}", oriOrderInfo.get("mer_orderid"),respJson.get("return_code"), respJson.get("return_msg"));
-				throw new BusinessException(1002, "退款失败");
+//				throw new BusinessException(1002, "退款失败");
+				jsonRes.put("errcode", "R");
+				jsonRes.put("rtmsg", "系统异常-等待查询");
 			} else { 
 				if ( "SUCCESS".equals(respJson.get("result_code"))) {
 					String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,time_end"
@@ -1324,14 +1502,25 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				  jsonRes.put("rtmsg", "退款成功-等待查询");
 				  logger.info("[银联 -微信] 订单{} 退款成功", orderId);
 				}else{
-					String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,"
-							+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
-							+ " txnLevel=? ,status='6'"
-							+ " where mer_orderid=? "; 
-				   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0,  orderId);
-				   logger.info("[银联 -微信] 订单{} 退款 失败{}：{}", orderId, respJson.get("error_code"), respJson.get("error_code_des"));
-				   jsonRes.put("errcode", "E");
-				   jsonRes.put("rtmsg", "退款失败");
+					if ("SYSTEMERROR".equals(respJson.get("err_code"))) {
+						String updateSql = "update pg_wechat_txn set status='0', respcode=?,respmsg=? "
+								+ " where status<>'1' and  mer_orderid=?";
+						dao.update(updateSql, "USERPAYING" , respJson.get("return_code")+respJson.get("return_msg"),
+								orderId);
+						logger.error("[网联 -微信]  订单{} 退款系统异常AT_ERROR_SYSTEMERROR，等待查询{}：{}",orderId, respJson.get("return_code"),
+								respJson.get("return_msg"));
+						jsonRes.put("errcode", "R");
+						jsonRes.put("rtmsg", "系统异常-等待查询");
+					}else{
+						String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,"
+								+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
+								+ " txnLevel=? ,status='6'"
+								+ " where mer_orderid=? "; 
+					   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0,  orderId);
+					   logger.info("[银联 -微信] 订单{} 退款 失败{}：{}", orderId, respJson.get("error_code"), respJson.get("error_code_des"));
+					   jsonRes.put("errcode", "E");
+					   jsonRes.put("rtmsg", "退款失败");
+					}
 				}
 			}	
 			return  jsonRes.toJSONString();
@@ -1346,6 +1535,15 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 * @return
 		 */
 		public String cupsWxRefundQuery(Map<String, Object> orderInfo) throws BusinessException {
+			/*
+			 * 2019-02-14 修改
+			 * 当退款同步响应没有返回就发起查询请求时
+			 * 即 orderInfo.get("bk_orderid") ==null 时   return "DOING";  
+			 */
+			if (orderInfo.get("bk_orderid") ==null) {
+				logger.info("[银联-微信] 退款请求同步响应慢 订单号：{}",orderInfo.get("mer_orderid"));
+				 return "DOING"; 
+			}
 			Map<String, String> merMsg =new HashMap<String,String>();
 			merMsg.put("appid",appid);//getWxAppid(String.valueOf(orderInfo.get("bankmid"))));//银行端提供  appid
 			merMsg.put("mch_id",String.valueOf(orderInfo.get("mch_id")));//mchId);//银行端提供  微信商户号
@@ -1369,7 +1567,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(refundQueryUrl, reqStr); 
 				logger.info("[银联-微信] 退款查询 返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信 ] 退款查询 网络错误:{}，订单号{}", e,orderInfo.get("mer_orderid"));
+				logger.error("[银联-微信 ] 退款查询 网络错误AT_ERROR_NET:{}，订单号{}", e,orderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1379,14 +1577,14 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]退款   响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]退款   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 throw new BusinessException(8000, "退款 响应报文处理异常");
 			}
 			/*
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信]订单查询   响应报文验签失败，订单号：{}",orderInfo.get("mer_orderid"));
+				logger.info("[银联-微信]订单查询   响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",orderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1398,7 +1596,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					  		+ " where status<>'1' and  mer_orderid=?";	
 				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_msg"),orderInfo.get("mer_orderid"));
 					  
-				logger.error("[银联 -微信]  订单{} 退款 失败{}：{}", orderInfo.get("mer_orderid"),respJson.get("return_code"), respJson.get("return_msg"));
+				logger.error("[银联 -微信]  订单{} 退款 失败AT_ERROR {}：{}", orderInfo.get("mer_orderid"),respJson.get("return_code"), respJson.get("return_msg"));
 				 RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "退款失败");
 			} else { 
@@ -1418,17 +1616,27 @@ public class CupsATPayService implements WxpayService , AlipayService{
 								+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
 								+ " txnLevel=? ,status='6'"
 								+ " where mer_orderid=? "; 
-					   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0,  orderInfo);
+					   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0,  orderInfo.get("mer_orderid"));
 					   logger.info("[银联 -微信] 订单{} 退款 失败{}：{}", orderInfo, respJson.get("error_code"), respJson.get("error_code_des"));
 					   return "FAIL";
 					}
 					
 				}else{
+					if ("SYSTEMERROR".equals(respJson.get("err_code"))) {
+						String updateSql = "update pg_wechat_txn set status='0', respcode=?,respmsg=? "
+								+ " where status<>'1' and  mer_orderid=?";
+						dao.update(updateSql,"USERPAYING", respJson.get("err_code")+respJson.get("err_code_des"),
+								orderInfo.get("mer_orderid"));
+						logger.error("[网联 -微信]  订单{} 退款 失败{}：{},返回系统异常AT_ERROR_SYSTEMERROR", orderInfo.get("mer_orderid"),  respJson.get("err_code"),respJson.get("err_code_des"));
+						RedisUtil.addFailCountByRedis(1);
+//						throw new BusinessException(1002, "退款失败");
+						return "DOING";
+					}
 					String updateSql = "update pg_wechat_txn set respcode=?, respmsg=?,"
 							+ "time_end=to_char(sysdate,'yyyymmddhh24miss'),lmdate=sysdate,"
 							+ " txnLevel=? ,status='6'"
 							+ " where mer_orderid=? "; 
-				   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0,  orderInfo);
+				   dao.update(updateSql, respJson.get("err_code"), respJson.get("err_code_des"), 0, orderInfo.get("mer_orderid"));
 				   logger.info("[银联 -微信] 订单{} 退款 失败{}：{}", orderInfo, respJson.get("error_code"), respJson.get("error_code_des"));
 				   return "FAIL";
 				}
@@ -1466,7 +1674,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(queryUrl, reqStr); 
 				logger.info("[银联-微信] 订单查询返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信 ] 订单查询网络错误:{}，订单号{}", e,orderInfo.get("mer_orderid"));
+				logger.error("[银联-微信 ] 订单查询网络错误AT_ERROR_NET:{}，订单号{}", e,orderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1476,7 +1684,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]订单查询   响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]订单查询   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 throw new BusinessException(8000, "订单查询响应报文处理异常");
 			}
 			
@@ -1484,7 +1692,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信]订单查询   响应报文验签失败，订单号：{}",orderInfo.get("mer_orderid"));
+				logger.info("[银联-微信]订单查询   响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",orderInfo.get("mer_orderid"));
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1497,7 +1705,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					  		+ " where status<>'1' and  mer_orderid=?";	
 				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_msg"),orderInfo.get("mer_orderid"));
 					  
-				logger.error("[银联 -微信]  订单查询 失败{}：{}", respJson.get("return_code"), respJson.get("return_msg"));
+				logger.error("[银联 -微信]  订单查询 失败AT_ERROR {}：{}", respJson.get("return_code"), respJson.get("return_msg"));
 				 RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "查询失败");
 			} else {
@@ -1530,22 +1738,56 @@ public class CupsATPayService implements WxpayService , AlipayService{
 							orderInfo.put("TXNLEVEL", txnLevel);
 							orderInfo.put("RTNCODE", respJson.get("trade_state"));
 							orderInfo.put("RTNMSG", respJson.get("trade_state_desc"));
-							orderInfo.put("BANKTYPE",paytype);
+							//2019-02-14 修改  返回banktype字段内容为 支付银行通道缩写
+							orderInfo.put("BANKTYPE",respJson.get("bank_type"));//paytype);
+//							orderInfo.put("BANKTYPE",paytype);
 							orderInfo.put("USERID",respJson.get("openid"));
+							//交易完成时间
+							String time_end="";
+							try {
+								time_end= DateUtil.formartDate(respJson.get("time_end")==null? new Date().toString():respJson.get("time_end"), DateUtil.FORMAT_TRADETIME, DateUtil.FORMAT_DATETIME);
+								orderInfo.put("SUCTIME", time_end);
+							} catch (Exception e) {
+								logger.info("[银联 -微信] 查询订单{} ：日期格式转换异常AT_ERROR_PARAMS",orderInfo.get("mer_orderid"));
+								RedisUtil.addFailCountByRedis(1);
+								throw new BusinessException(8000, "时间格式转化错误");
+							}
 							if(bean!=null){
 								bean.setUserId(respJson.get("openid"));
+								bean.setPayOrderTime(time_end);
 							}
 							logger.info("[银联 -微信] 查询订单{} ：{}||{}",orderInfo.get("mer_orderid"), respJson.get("trade_state"),respJson.get("trade_state_desc"));
 							notify.sendNotify(orderInfo);
 						}
 						logger.info("[银联-微信]订单查询  成功，订单号{}", orderInfo.get("mer_orderid") );
 						return "SUCCESS";
-					}else 	if ("USERPAYING".equals(respJson.get("trade_state"))) {
+					}else 	if ("USERPAYING".equals(respJson.get("trade_state"))||"NOTPAY".equals(respJson.get("trade_state"))) {
 						String updateSql="update pg_wechat_txn set respcode=?,respmsg=? ,qrcode=?, lmdate=sysdate "
 						  		+ " where status<>'1' and  mer_orderid=?";
 						 dao.update(updateSql, respJson.get("trade_state"),respJson.get("trade_state_desc"),respJson.get("code_url"),orderInfo.get("mer_orderid"));
 						 logger.info("[银联 -微信] 查询订单{} ：{}||{}",orderInfo.get("mer_orderid"), respJson.get("trade_state"),respJson.get("trade_state_desc"));
 					     return "DOING";
+					/*
+					 * 2019-02-14 修改
+					 * 
+					 * 完善返回信息码判断
+					 * CLOSED  订单关闭  更新为5 
+					 * REVOKED 订单撤销  更新为7
+					 *   
+					 * 
+					 */
+					}else if ("CLOSED".equals(respJson.get("trade_state"))) {
+						String updateSql="update pg_wechat_txn set status='5',respcode=?,respmsg=? , lmdate=sysdate "
+						  		+ " where status<>'1' and  mer_orderid=?";
+						 dao.update(updateSql, respJson.get("trade_state"),respJson.get("trade_state_desc"),orderInfo.get("mer_orderid"));
+						 logger.info("[银联 -微信] 查询订单{} ：{}||{}",orderInfo.get("mer_orderid"), respJson.get("trade_state"),respJson.get("trade_state_desc"));
+					     return "CLOSED";
+					}else if ("REVOKED".equals(respJson.get("trade_state"))) {
+						String updateSql="update pg_wechat_txn set status='7',respcode=?,respmsg=? , lmdate=sysdate "
+						  		+ " where status<>'1' and  mer_orderid=?";
+						 dao.update(updateSql, respJson.get("trade_state"),respJson.get("trade_state_desc"),orderInfo.get("mer_orderid"));
+						 logger.info("[银联 -微信] 查询订单{} ：{}||{}",orderInfo.get("mer_orderid"), respJson.get("trade_state"),respJson.get("trade_state_desc"));
+					     return "REVOKED";
 					}else{
 						String updateSql="update pg_wechat_txn set status='6',respcode=?,respmsg=? ,qrcode=?, lmdate=sysdate "
 						  		+ " where status<>'1' and  mer_orderid=?";
@@ -1554,10 +1796,20 @@ public class CupsATPayService implements WxpayService , AlipayService{
 						return "FAIL";
 					}
 				}else {
+					 /*
+					  * 系统异常  允许进行查询
+					  */
+				  if ("SYSTEMERROR".equals(respJson.get("err_code"))) {
+					String updateSql="update pg_wechat_txn set status='0', respcode=?,respmsg=? "
+					 		 + " where status<>'1' and  mer_orderid=?";	
+					dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderInfo.get("mer_orderid"));
+					logger.error("[银联-微信]条码交易   银联系统异常，订单号{},返回{}，{}", orderInfo.get("mer_orderid"), respJson.get("err_code"), respJson.get("err_code_des"));
+				    return "DOING";
+				  }
 				  String updateSql="update pg_wechat_txn set status='6', respcode=?,respmsg=? "
 				  		+ " where status<>'1' and  mer_orderid=?";	
 				  dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderInfo.get("mer_orderid"));
-				  logger.error("[银联-微信]订单查询 失败，订单号{},返回{}，{}", orderInfo.get("mer_orderid"), respJson.get("err_code"), respJson.get("err_code_des"));
+				  logger.error("[银联-微信]订单查询 失败 AT_ERROR_PARAMS，订单号{},返回{}，{}", orderInfo.get("mer_orderid"), respJson.get("err_code"), respJson.get("err_code_des"));
 				  RedisUtil.addFailCountByRedis(1);
 				  throw new BusinessException(8000, "查询异常");
 				}
@@ -1572,7 +1824,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 *
 		 */
 		public String cupsWxPay(String unno, String mid, String bankMid, String subject, BigDecimal amount,
-				int fiid, String payWay,String orderid, String tid,  String hybRate, String hybType, String mchId ,String channelId) throws BusinessException {
+				int fiid, String payWay,String orderid, String tid,  String hybRate, String hybType, String mchId ,String channelId,String isCredit) throws BusinessException {
 			/**
 			 * 1.验重 订单号
 			 * 
@@ -1586,8 +1838,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 
 			 */
 			String sql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-				+ " bankmid ,status, cdate, lmdate,trantype,unno,mer_tid,hybType,hybRate) values "
-				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,sysdate,sysdate,'1',?,?,?,?)";
+				+ " bankmid ,status, cdate, lmdate,trantype,unno,mer_tid,hybType,hybRate,trade_type) values "
+				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,sysdate,sysdate,'1',?,?,?,?,'ZS')";
 			dao.update(sql, fiid, orderid, subject, amount, mid, bankMid, 0, unno, tid, hybType, hybRate);
 			/**
 			 * 3、组装报文并加密
@@ -1606,6 +1858,17 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			merMsg.put("notify_url", wxNotifyUrl);
 			merMsg.put("spbill_create_ip","127.0.0.1");//调用方法的机器的ip
 			merMsg.put("device_info", "T"+bankMid+"001"); 
+			/* 
+			 * 2018-12-06  修改
+			 * 
+			 * 根据isCredit判断该商户是否可以使用贷记卡交易
+			 * 1 可以  9 不可以
+			 *  
+			 */
+			if ("9".equals(isCredit)) {
+				//不可以使用信用卡交易
+				merMsg.put("limit_pay","no_credit");//调用方法的机器的ip
+			}
 //			merMsg.put("idc_flag", "10");//IDC 具体选择哪个？
 			Map<String, String> req=cupsService.sign(merMsg);
 			
@@ -1614,7 +1877,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 			     reqStr=cupsService.mapToXml(req) ;
 			} catch (Exception e1) {
-				 logger.info("[银联-微信]获取二维码  请求报文转化异常：{}",e1.getMessage());
+				 logger.info("[银联-微信]获取二维码  请求报文转化异常AT_ERROR_PARAMS：{}",e1.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
 				 throw new BusinessException(8000, "交易异常");
 			}
@@ -1624,7 +1887,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(zsUrl, reqStr); 
 				logger.info("[银联-微信]获取二维码返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信]获取二维码网络错误:{}，订单号{}", e,orderid);
+				logger.error("[银联-微信]获取二维码网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1634,7 +1897,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]获取二维码   响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]获取二维码   响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
 				 throw new BusinessException(8000, "获取二维码响应报文处理异常");
 			}
@@ -1643,7 +1906,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信] 获取二维码   响应报文验签失败，订单号：{}",orderid);
+				logger.info("[银联-微信] 获取二维码   响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",orderid);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
 			/*
@@ -1655,7 +1918,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					  		+ " where status<>'1' and  mer_orderid=?";	
 				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_msg"),orderid);
 					  
-				logger.error("[银联 -微信] 获取二维码失败{}：{}", respJson.get("return_code"), respJson.get("return_msg"));
+				logger.error("[银联 -微信] 获取二维码失败AT_ERROR_PARAMS {}：{}", respJson.get("return_code"), respJson.get("return_msg"));
 				 RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取二维码失败");
 			} else {
@@ -1667,6 +1930,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					logger.info("[银联-微信]获取二维码成功，订单号{}", orderid );
 					qrcode=respJson.get("code_url");
 					if (null==qrcode||"".equals(qrcode)) {
+						logger.error("[银联 -微信] 获取二维码失败AT_ERROR_PARAMS {}： QRCODE为空", respJson.get("return_code"));
 						RedisUtil.addFailCountByRedis(1);
 						throw new BusinessException(1002, "下单失败");
 					}
@@ -1675,7 +1939,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				  String updateSql="update pg_wechat_txn set status='6', respcode=?,respmsg=? "
 				  		+ " where status<>'1' and  mer_orderid=?";	
 				  dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderid);
-				  logger.error("[银联-微信]获取二维码失败，订单号{},返回{}，{}", orderid, respJson.get("err_code"), respJson.get("err_code_des"));
+				  logger.error("[银联-微信]获取二维码失败AT_ERROR_PARAMS，订单号{},返回{}，{}", orderid, respJson.get("err_code"), respJson.get("err_code_des"));
 				  RedisUtil.addFailCountByRedis(1);
 				  throw new BusinessException(1002, "下单失败");
 				}
@@ -1689,7 +1953,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 * @return
 		 */
 		public String cupsWxBsPay(HrtPayXmlBean bean,String unno, String mid, int fiid, String payway, String orderid, String merchantCode,
-				 String authCode, BigDecimal amount, String subject, String tid,String mchId,String channelId) throws BusinessException {
+				 String authCode, BigDecimal amount, String subject, String tid,String mchId,String channelId,String isCredit) throws BusinessException {
 			/**
 			 * 1.验重 订单号
 			 * 
@@ -1703,7 +1967,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 
 			 */
 			String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-					+ "status, cdate, lmdate,unno,mer_tid,trantype,bankmid) values((S_PG_Wechat_Txn.nextval),?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,?)";
+					+ "status, cdate, lmdate,unno,mer_tid,trantype,bankmid,trade_type) values((S_PG_Wechat_Txn.nextval),?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,?,'BS')";
 			dao.update(insertSql, fiid, orderid, subject, amount, mid, unno, tid,1, merchantCode);
 			
 			/**
@@ -1722,15 +1986,26 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			merMsg.put("out_trade_no",orderid);//订单编号
 			merMsg.put("spbill_create_ip","127.0.0.1");//调用方法的机器的ip
 			merMsg.put("device_info", "T"+merchantCode+"001");
+			/* 
+			 * 2018-12-06  修改
+			 * 
+			 * 根据isCredit判断该商户是否可以使用贷记卡交易
+			 * 1 可以  9 不可以
+			 *  
+			 */
+			if ("9".equals(isCredit)) {
+				//不可以使用信用卡交易
+				merMsg.put("limit_pay","no_credit");//调用方法的机器的ip
+			}
 			Map<String, String> req=cupsService.sign(merMsg);//cupsService.getPackMessageForWx(merMsg);
 			
 			String reqStr=null;
 			try {
 			     reqStr=cupsService.mapToXml(req) ;
 			} catch (Exception e1) {
-				 logger.info("[银联-微信]条码交易  请求报文转化异常：{}",e1.getMessage());
+				 logger.info("[银联-微信]条码交易  请求报文转化异常AT_ERROR_PARAMS：{}",e1.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
-				 throw new BusinessException(8000, "商户入驻异常");
+				 throw new BusinessException(8000, "交易失败");
 			}
 			String res=null;
 			try {
@@ -1738,7 +2013,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(bsUrl, reqStr); 
 				logger.info("[银联-微信]条码交易  返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信]条码交易  网络错误:{}，订单号{}", e,orderid);
+				logger.error("[银联-微信]条码交易  网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 				String updateSql="update pg_wechat_txn set respcode=?,respmsg=? "
 						+ " where status<>'1' and  mer_orderid=?";
 				dao.update(updateSql, "USERPAYING","处理中",orderid);
@@ -1751,7 +2026,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			try {
 				respJson = cupsService.xmlToMap(res);
 			} catch (Exception e) {
-				 logger.info("[银联-微信]条码交易  响应报文转化异常：{}",e.getMessage());
+				 logger.info("[银联-微信]条码交易  响应报文转化异常AT_ERROR_PARAMS：{}",e.getMessage());
 				 RedisUtil.addFailCountByRedis(1);
 				 throw new BusinessException(8000, "条码交易响应报文处理异常");
 			}
@@ -1760,7 +2035,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 			 * 验签开始
 			 */
 			if (!cupsService.checkSign(respJson)) {
-				logger.info("[银联-微信] ]条码交易  响应报文验签失败，订单号：{}",orderid);
+				logger.info("[银联-微信] ]条码交易  响应报文验签失败AT_ERROR_VERTIFYSIGN，订单号：{}",orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new HrtBusinessException(8000, "交易失败");
 			}
@@ -1781,7 +2056,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					  		+ " where status<>'1' and  mer_orderid=?";	
 				dao.update(updateSql, respJson.get("return_code"),respJson.get("return_msg"),orderid);
 					  
-				logger.error("[银联 -微信]条码交易 失败{}：{}", respJson.get("return_code"), respJson.get("return_msg"));
+				logger.error("[银联 -微信]条码交易 失败AT_ERROR_PARAMS {}：{}", respJson.get("return_code"), respJson.get("return_msg"));
 				 RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "条码交易失败");
 			} else {
@@ -1823,22 +2098,42 @@ public class CupsATPayService implements WxpayService , AlipayService{
 						if (bean!=null) {
 							bean.setRtnCode(respJson.get("result_code"));
 							bean.setRtnMsg(respJson.get("result_code"));
-							bean.setBankType(paytype);
+							//2019-02-14 修改  返回banktype字段内容为 支付银行通道缩写
+							bean.setBankType(respJson.get("bank_type"));//paytype);
+//							bean.setBankType(paytype);
 							bean.setUserId(respJson.get("openid"));
+							try {
+								String time_end= DateUtil.formartDate(respJson.get("time_end")==null? new Date().toString():respJson.get("time_end"), DateUtil.FORMAT_TRADETIME, DateUtil.FORMAT_DATETIME);
+								bean.setPayOrderTime(time_end);
+							} catch (Exception e) {
+								logger.info("[银联-微信]条码交易，订单号{} 时间格式转换异常AT_ERROR_PARAMS", orderid );
+								RedisUtil.addFailCountByRedis(1);
+								throw new BusinessException(8000, "时间格式转化错误");
+							}
 						}
 						logger.info("[银联-微信]条码交易成功，订单号{}", orderid );
 						return "S";
 					}
 					return "R";
 				}else {
+				 /*
+				  * 系统异常  允许进行查询
+				  */
+				  if ("SYSTEMERROR".equals(respJson.get("err_code"))) {
+					  String updateSql="update pg_wechat_txn set status='0', respcode=?,respmsg=? "
+				 		  		+ " where status<>'1' and  mer_orderid=?";	
+						  dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderid);
+						  logger.error("[银联-微信]条码交易   银联系统异常，订单号{},返回{}，{}", orderid, respJson.get("err_code"), respJson.get("err_code_des"));
+						  return "R";
+			      }
 				  String updateSql="update pg_wechat_txn set status='6', respcode=?,respmsg=? "
 				  		+ " where status<>'1' and  mer_orderid=?";	
 				  dao.update(updateSql, respJson.get("err_code"),respJson.get("err_code_des"),orderid);
-				  logger.error("[银联-微信]条码交易 失败，订单号{},返回{}，{}", orderid, respJson.get("err_code"), respJson.get("err_code_des"));
+				  logger.error("[银联-微信]条码交易 失败 AT_ERROR_PARAMS，订单号{},返回{}，{}", orderid, respJson.get("err_code"), respJson.get("err_code_des"));
 				  RedisUtil.addFailCountByRedis(1);
 				  if (bean!=null) {
-						bean.setRtnCode(respJson.get("error_code"));
-						bean.setRtnMsg(respJson.get("error_code_des"));
+						bean.setRtnCode(respJson.get("err_code"));
+						bean.setRtnMsg(respJson.get("err_code_des"));
 						bean.setBankType("");
 						bean.setUserId("");
 				  }
@@ -1862,8 +2157,8 @@ public class CupsATPayService implements WxpayService , AlipayService{
 					throw new BusinessException(8000, "订单号重复");
 				}
 				String sql = "insert into pg_wechat_txn (pwid,fiid, txntype,cdate,status,"
-						+ "mer_orderid, detail, txnamt, mer_id,unno,bankmid,trantype) values"
-						+ "(S_PG_Wechat_Txn.nextval,?,'0',sysdate,'A',?,?,?,?,?,?,'1')";
+						+ "mer_orderid, detail, txnamt, mer_id,unno,bankmid,trantype,trade_type) values"
+						+ "(S_PG_Wechat_Txn.nextval,?,'0',sysdate,'A',?,?,?,?,?,?,'1','ZS')";
 				dao.update(sql, fiid, orderid, subject, amount, mid, unno,bankMid);
 			} catch (Exception e) {
 				logger.error("插入公众号支付订单失败", e);
@@ -1886,14 +2181,16 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 * @param 
 		 * @return
 		 */
-		public String cupsWxCancel(String bankmid,String orderid,String mchId,String channelId) throws BusinessException {
+		public String cupsWxCancel(Map<String,Object> cancelOrder) throws BusinessException {
+			//String bankmid,String orderid,String mchId,String channelId
 			Map<String, String> merMsg =new HashMap<String,String>();
+			String orderid=String.valueOf(cancelOrder.get("mer_orderid"));
 			merMsg.put("appid",appid);//getWxAppid(String.valueOf(orderInfo.get("bankmid"))));//银行端提供  appid
-			merMsg.put("mch_id",mchId);//银行端提供  微信商户号
-			merMsg.put("sub_mch_id",bankmid);  //微信子商户号
-			merMsg.put("channel_id",channelId);//银行端提供   渠道商编号
+			merMsg.put("mch_id",String.valueOf(cancelOrder.get("mch_id")));//mchId);//银行端提供  微信商户号
+			merMsg.put("sub_mch_id",String.valueOf(cancelOrder.get("bankmid")));//bankmid);  //微信子商户号
+			merMsg.put("channel_id",String.valueOf(cancelOrder.get("channel_id")));//channelId);//银行端提供   渠道商编号
 			merMsg.put("nonce_str", cupsService.getRandomString(32));//随机字符串
-			merMsg.put("out_trade_no",orderid);//订单编号
+			merMsg.put("out_trade_no",orderid);//);//订单编号
 			Map<String, String> req=cupsService.sign(merMsg);
  
 			String reqStr=null;
@@ -1910,7 +2207,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(cancelUrl, reqStr); 
 				logger.info("[银联-微信] 订单撤销返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信 ] 订单撤销网络错误:{}，订单号{}", e,orderid);
+				logger.error("[银联-微信 ] 订单撤销网络错误 AT_ERROR_NET:{}，订单号{}", e,orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1924,25 +2221,56 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				 throw new BusinessException(8000, "订单撤销响应报文处理异常");
 			}
 			logger.info("respMap:"+respJson);
-		 
-			return "";
-			
+			try {
+				/*
+				 * 1、判断通讯是否异常，通讯成功returnCode=SUCCESS 继续判断 ;通讯失败returnCode=FAIL返回R用户查询撤销结果 
+				 */
+				String  returnCode=respJson.get("return_code");
+				if ("SUCCESS".equals(returnCode)) {
+					/*
+					 * 2、判断通讯是否异常，通讯成功returnCode=SUCCESS 继续判断 ;通讯失败returnCode=FAIL返回R用户查询撤销结果 
+					 */
+					String resultCode=respJson.get("result_code");
+					String recall=respJson.get("recall");
+					if ("SUCCESS".equals(resultCode)&&"N".equals(recall)) {
+						logger.info("[银联-微信]订单撤销成功， 订单号 {}。",orderid);
+						String updateSql=" update pg_wechat_txn set status='7',respmsg='订单撤销成功', lmdate =sysdate  where status not in ('1','7','5') and  mer_orderid=? ";
+						dao.update(updateSql, orderid);
+						return "SUCCESS";
+					}else if ("SUCCESS".equals(resultCode)&&"Y".equals(recall)) {
+						logger.info("[银联-微信]订单撤销 结果待确认， 订单号 {}。",orderid);
+						return "DOING";
+					}else {
+						String errCode=respJson.get("err_code");
+						logger.info("[银联-微信]订单撤销 失败 返回  R 等待用户确认撤销状态 AT_ERROR_SYSTEMERROR。 订单号 {}  {}：{}",orderid,errCode,respJson.get("err_code_des"));
+						return  "DOING";
+					}
+				}else{
+					logger.info("[银联-微信]订单撤销 同步响应异常 返回  R 等待用户确认撤销状态。 订单号 {}  {}：{}",orderid,returnCode,respJson.get("return_msg"));
+					return "DOING";
+				}
+			} catch (Exception e) {
+				 logger.info("[银联-微信]订单撤销   处理异常{}：{}",orderid,e.getMessage());
+				 throw new BusinessException(8000, "撤销失败");
+			}
 		}  
 		/**
 		 * 银联微信-关闭
 		 * @param 
 		 * @return
 		 */
-		public String cupsWxClose(String bankmid,String orderid,String mchId,String channelId) throws BusinessException {
+		public String cupsWxClose(Map<String,Object> closeOrder) throws BusinessException {
+//		public String cupsWxClose(String bankmid,String orderid,String mchId,String channelId) throws BusinessException {
 			Map<String, String> merMsg =new HashMap<String,String>();
 			merMsg.put("appid",appid);//getWxAppid(String.valueOf(orderInfo.get("bankmid"))));//银行端提供  appid
-			merMsg.put("mch_id",mchId);//银行端提供  微信商户号
-			merMsg.put("sub_mch_id",bankmid);  //微信子商户号
-			merMsg.put("channel_id",channelId);//银行端提供   渠道商编号
+			merMsg.put("mch_id",String.valueOf(closeOrder.get("mch_id")));//mchId);//银行端提供  微信商户号
+			merMsg.put("sub_mch_id",String.valueOf(closeOrder.get("bankmid")));//bankmid);  //微信子商户号
+			merMsg.put("channel_id",String.valueOf(closeOrder.get("channel_id")));//bchannelId);//银行端提供   渠道商编号
 			merMsg.put("nonce_str", cupsService.getRandomString(32));//随机字符串
-			merMsg.put("out_trade_no",orderid);//订单编号
+			merMsg.put("out_trade_no",String.valueOf(closeOrder.get("mer_orderid")));//orderid);//订单编号
 			Map<String, String> req=cupsService.sign(merMsg);
  
+			String orderid =String.valueOf(closeOrder.get("mer_orderid"));
 			String reqStr=null;
 			try {
 			     reqStr=cupsService.mapToXml(req) ;
@@ -1957,7 +2285,7 @@ public class CupsATPayService implements WxpayService , AlipayService{
 		 		res = netty.sendFormData(closeUrl, reqStr); 
 				logger.info("[银联-微信] 订单关闭返回报文：{}",res);
 			} catch (Exception e) {
-				logger.error("[银联-微信 ] 订单关闭网络错误:{}，订单号{}", e,orderid);
+				logger.error("[银联-微信 ] 订单关闭网络错误AT_ERROR_NET:{}，订单号{}", e,orderid);
 				RedisUtil.addFailCountByRedis(1);
 				throw new BusinessException(1002, "获取信息网络错误");
 			} 
@@ -1971,8 +2299,67 @@ public class CupsATPayService implements WxpayService , AlipayService{
 				 throw new BusinessException(8000, "订单关闭响应报文处理异常");
 			}
 			logger.info("respMap:"+respJson);
-		 
-			return "";
+			/*
+			 * 2018-12-13 修改
+			 * 
+			 * 处理订单关闭请求响应报文 
+			 * 1、 return_code =FAIL  更新respmsg 、lmdate 不更新 status 
+			 * 2、 return_code =SUCCESS  进行下一步判断
+			 *    a、result_code=SUCCESS  关单成功 更新 respmsg、lmdate、status=5
+			 *    b、result_code=FAIL    
+			 *       i、   err_code =ORDERPAID   表示  订单已支付，不能发起关单   更新订单 respcode=USERPAYING  lmdate=sysdate  status=0  respMsg=订单已支付，不能发起关单
+			 *       ii、err_code =SYSTEMERROR  表示 系统异常   更新订单 respmsg=respmsg|关单异常   
+			 */
+			//响应标识
+			String rtnStatus="R";
+			//返回状态码
+			String  return_code=respJson.get("return_code");
+			//更新数据
+			String respcode=String.valueOf(closeOrder.get("respcode"));
+			String respmsg=String.valueOf(closeOrder.get("respmsg"));
+			String status=String.valueOf(closeOrder.get("status"));
+			StringBuffer  closeOrderSql= new StringBuffer();
+			closeOrderSql.append("update pg_wechat_txn set respcode=?,respmsg=?,lmdate=sysdate ,status=? ");
+			
+			if (!"SUCCESS".equals(return_code)) {
+				respmsg=respJson.get("return_msg");
+				rtnStatus="R";
+				logger.info("[银联-微信]订单关闭操作---订单{}关闭 系统响应{}",orderid,respmsg);
+			}else{
+				String result_code=respJson.get("result_code");
+				if ("SUCCESS".equals(result_code)) {
+					logger.info("[银联-微信]订单关闭操作---订单{}已关闭",orderid);
+					respcode=result_code;
+					respmsg="订单关闭成功";
+					status="5";
+					rtnStatus="SUCCESS";
+				}else{
+					String err_code=respJson.get("err_code");
+					if ("ORDERPAID".equals(err_code)) {
+						respcode="USERPAYING";
+						respmsg="订单已支付，不能发起关单";
+						status="0";
+						rtnStatus="E-S";
+					}else if ("SYSTEMERROR".equals(err_code)) {
+						respmsg=respmsg+"|关单异常";
+						rtnStatus="ERROR";
+					}else{
+						rtnStatus="DOING";
+					}
+					logger.info("[银联-微信]订单关闭操作---订单{}关闭 系统响应{}:{}",orderid,err_code,respmsg);
+				}
+			}
+			closeOrderSql.append(" where mer_orderid=? and status not in ('5','1')");
+			int counts=dao.update(closeOrderSql.toString(), respcode,respmsg,status,orderid);
+			if (counts==0) {
+				logger.info("[银联-微信]订单关闭操作---订单{}已关闭，不需要重复关单",orderid);
+			}else if (counts>1) {
+				logger.error("[银联-微信]订单关闭操作---存在多笔订单{}，请核实AT_ERROR",orderid);
+				RedisUtil.addFailCountByRedis(1);
+			}else {
+				logger.info("[银联-微信]订单关闭操作---关闭订单{}更改成功",orderid);
+			}
+			return rtnStatus;
 			
 		}
 

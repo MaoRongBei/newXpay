@@ -1,6 +1,7 @@
 package com.hrtpayment.xpay.common.service.impl;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +23,7 @@ import com.hrtpayment.xpay.quickpay.common.service.QuickpayService;
 import com.hrtpayment.xpay.quickpay.cups.service.CupsQuickPayService;
 import com.hrtpayment.xpay.quickpay.newCups.service.newCupsPayService;
 import com.hrtpayment.xpay.redis.RedisUtil;
+import com.hrtpayment.xpay.redis.RedisUtilForTest;
 import com.hrtpayment.xpay.utils.exception.BusinessException;
 import com.hrtpayment.xpay.utils.exception.HrtBusinessException;
 
@@ -59,8 +61,11 @@ public class ManageService {
 	@Value("${quick.dayLAmt}")
 	private String dayLAmt;
 	
-	@Value("dae.unno") 
+	@Value("${dae.unno}") 
 	private String daeUnno;
+	
+	@Value("${xpay.special.unno}")
+	String specUnno;
 
 	/**
 	 * 查询订单
@@ -68,7 +73,20 @@ public class ManageService {
 	 * @return
 	 */
 	public String queryOrder(String orderid) {
+		/*
+		 * 2019-04-08 修改
+		 * 
+		 * 查询次数 及查询 时间累增是redis数据库内
+		 * 
+		 */
+		long beginTime=System.currentTimeMillis();
 		List<Map<String, Object>> list = dao.queryForList("select w.*,bm.mch_id,bm.channel_id from pg_wechat_txn w,bank_merregister bm where bm.merchantcode=w.bankmid and bm.fiid=w.fiid and    mer_orderid=?", orderid);
+		long endTime=System.currentTimeMillis();
+		try {
+			RedisUtilForTest.addCount("addCountsForCounts", endTime-beginTime);
+		} catch (BusinessException e1) {
+			logger.error("[数据收集]  channelService.queryOrder() 查询 所需时长获取异常 ，原因{}",e1.getMessage());
+		}
 		if (list.size()<1) {
 			return "订单号对应订单不存在";
 		} else if (list.size()>1) {
@@ -146,6 +164,108 @@ public class ManageService {
 		}
 		return "不支持的fiid";
 	}
+	 /**
+	  * 订单关闭
+	  * 根据订单号进行查询，订单状态不为1 的订单可以进行关闭
+	  * @param orderid
+	  * @return
+	  */
+	 public  String  closeOrder(String orderid){
+		//关单之前查询  确保订单状态
+		 String orderStatus=queryOrder(orderid);
+		 if ("DOING_TRADE_NOT_EXIST".equals(orderStatus)) {
+			 return orderid+"订单不存在，无需关单";
+		 }
+		 String  closeOrdSql="select pwt.fiid, pwt.status,mer_orderid,bk_orderid,bankmid, mch_id,channel_id"
+		 		+ " from pg_wechat_txn pwt ,bank_merregister bm  "
+		 		+ " where bankmid=merchantcode and  mer_orderid=? and pwt.status<>'1'";
+		 List<Map<String, Object>> closeOrdList=dao.queryForList(closeOrdSql, orderid);
+		 if (closeOrdList.size()==0) {
+			return orderid+"订单已经完成，无法关闭";
+		 }
+		 if (closeOrdList.size()>1) {
+			 return orderid+"订单异常，无法关闭";
+		 }
+		 
+		 Map<String, Object> closeOrder=closeOrdList.get(0);
+		 String status=String.valueOf(closeOrder.get("status"));
+		 if ("5".equals(status)) {
+			 logger.info("[订单关闭] 订单{}已关闭", orderid);
+			 return orderid+"订单已关闭";
+		 }
+		 if ("1".equals(status)) {
+			 logger.info("[订单关闭] 订单{}已成功，不能做订单关闭操作", orderid);
+			 return orderid+"订单已成功";
+		 }
+		 String fiid=String.valueOf(closeOrder.get("fiid"));
+		 try {
+			 if ("53".equals(fiid)) {
+				return cupsATPayService.cupsWxClose(closeOrder);
+			 }else if ("54".equals(fiid)) {
+				return cupsATPayService.cupsAliClosed(closeOrder);
+			 }else if ("60".equals(fiid)) {
+				return netCupsPayService.cupsWxClose(closeOrder);
+			 }else if ("61".equals(fiid)) {
+				return netCupsPayService.cupsAliClosed(closeOrder);	
+			 }else {
+				 return "该通道不支持关单操作";
+			 }
+				
+		} catch (Exception e) {
+			logger.error("[订单关闭] 订单{}关闭异常，原因：{}", orderid,e.getMessage());
+			return e.getMessage();
+		}
+	 }
+	 
+	 /**
+	  * 订单撤销
+	  * 根据订单号进行查询，订单状态不为1 的订单可以进行撤销
+	  * @param orderid
+	  * @return
+	  */
+	 public  String  cancelOrder(String orderid){
+		//撤销之前查询  确保订单状态
+		 queryOrder(orderid);
+		 String  cancelOrdSql="select pwt.fiid, pwt.status,mer_orderid,bk_orderid,bankmid, mch_id,channel_id"
+		 		+ " from pg_wechat_txn pwt ,bank_merregister bm  "
+		 		+ " where bankmid=merchantcode and  mer_orderid=? and pwt.status<>'1'";
+		 List<Map<String, Object>> cancelOrdList=dao.queryForList(cancelOrdSql, orderid);
+		 if (cancelOrdList.size()==0) {
+			return orderid+"订单已经完成，无法撤销，请执行退款操作。";
+		 }
+		 if (cancelOrdList.size()>1) {
+			 return orderid+"订单异常，无法撤销";
+		 }
+		 
+		 Map<String, Object> cancelOrder=cancelOrdList.get(0);
+		 String status=String.valueOf(cancelOrder.get("status"));
+		 if ("7".equals(status)) {
+			 logger.info("[订单撤销] 订单{}已撤销", orderid);
+			 return orderid+"订单已撤销";
+		 }
+		 if ("1".equals(status)) {
+			 logger.info("[订单撤销] 订单{}已成功，不能做订单撤销操作", orderid);
+			 return orderid+"订单已成功";
+		 }
+		 String fiid=String.valueOf(cancelOrder.get("fiid"));
+		 try {
+			 if ("53".equals(fiid)) {
+				return cupsATPayService.cupsWxCancel(cancelOrder);
+			 }else if ("54".equals(fiid)) {
+				return cupsATPayService.cupsAliCancel(cancelOrder);
+			 }else if ("60".equals(fiid)) {
+				return netCupsPayService.cupsWxCancel(cancelOrder);
+			 }else if ("61".equals(fiid)) {
+				return netCupsPayService.cupsAliCancel(cancelOrder);	
+			 }else {
+				 return "该通道不支持撤销操作";
+			 }
+				
+		} catch (Exception e) {
+			logger.error("[订单撤销] 订单{}撤销异常，原因：{}", orderid,e.getMessage());
+			return e.getMessage();
+		}
+	 }
 	/**
 	 * 退款
 	 * @param orderid
@@ -168,12 +288,17 @@ public class ManageService {
 		if (!"1".equals(oriStatus)) return "原交易未支付成功不能退款";
 		
 		
-		List<Map<String, Object>> merlist = dao.queryForList("select  mf.cycle  from hrt_merchacc mc ,hrt_merchfinacc mf where mc.maid=mf.maid and mc.hrt_mid =?",  list.get(0).get("mer_id"));
+		List<Map<String, Object>> merlist = dao.queryForList("select  mf.cycle,nvl(mf.Settmethod,'0') settmethod  from hrt_merchacc mc ,hrt_merchfinacc mf where mc.maid=mf.maid and mc.hrt_mid =?",  list.get(0).get("mer_id"));
 		if (merlist.size()<1) {
 			return "商户号错误，请核对";
 		}
+		/*
+		 *  part:1
+		 *  结算周期为1 或计算周期为0 且settmethod不为null 和0的商户 可进行退款
+		 */
 		String cycle=String.valueOf(merlist.get(0).get("CYCLE"));
-		if (!"1".equals(cycle)) {
+		String settmethod=String.valueOf(merlist.get(0).get("SETTMETHOD"));
+		if (!"1".equals(cycle)&&"0".equals(settmethod)) {
 			return "T0结算商户不能进行退款交易";
 		}
 
@@ -188,6 +313,12 @@ public class ManageService {
 				availableAmt = availableAmt.subtract(rfAmt);
 			}
 		}
+		/*
+		 * part:2
+		 * 判断当前退款金额 是否
+		 * availableAmt>=amount 才能退款
+		 * 
+		 */
 		if (availableAmt.compareTo(amount)<0) {
 			return "退款金额超限";
 		}
@@ -205,6 +336,58 @@ public class ManageService {
 				+ "(?,?,?,'1',sysdate,'A',?,?,?,?,?,sysdate,?)";
 		dao.update(sql, refundpwid,oriPwid,oriMap.get("FIID"), orderid, amount,oriMap.get("MER_ID")
 				,oriMap.get("UNNO"),oriMap.get("BANKMID"),oriMap.get("TRANTYPE"));
+		/*
+		 * part:3
+		 * 
+		 * T0商户
+		 * 判断钱包加金库余额是否>=当前退款金额  
+		 * true ：先扣减 
+		 * false：提示可用退款金额不足
+		 * 
+		 * T1 不做判断 正常做退款
+		 */
+		if (!"1".equals(cycle)&&!"0".equals(settmethod)) {
+			String endDate =(oriMap.get("TIME_END")+"").substring(0, 8);
+			
+			String queryBalanceSql=" select   psp.balance,psp.bookbal, rf.rfamtoutfee,rf.maid " 
+					+ " from  pg_sm_purse psp,(select round( ?*(1-MDA/MNAMT),2) rfamtoutfee,maid  from  pg_sm_wechattxn  where   pwid=? AND  TXNDAY=?) rf "
+					+ " where  psp. maid= rf.maid ";
+			List<Map<String, Object>> balanceList =dao.queryForList(queryBalanceSql, amount,oriPwid,endDate);
+			if (balanceList.size()==0) {
+				return "商户钱包余额为0，可退款金额不足。";
+			}else if (balanceList.size()>1) {
+				return "商户钱包余额错误，请联系客服进行咨询。";
+			}
+			BigDecimal  balance= (BigDecimal)balanceList.get(0).get("balance");
+			BigDecimal  bookbal= (BigDecimal)balanceList.get(0).get("bookbal");
+			BigDecimal  rfamtoutfee= (BigDecimal)balanceList.get(0).get("rfamtoutfee");
+			String maid=balanceList.get(0).get("maid")+"";
+			
+			String updateOrderSql="update pg_wechat_txn set status='6',lmdate=sysdate,respcode=? ,respmsg=? where pwid=? ";
+
+			//T+N余额+可提现余额<退款金额 提示 余额不足，扣款失败 更改 退款记录 为6
+			if ((bookbal.add(balance)).compareTo(rfamtoutfee)<0) {
+				dao.update(updateOrderSql, "FAIL","金额不足扣款失败",refundpwid);
+				return "余额不足，扣款失败";
+			}
+			//当T+N余额 >退款金额 直接从 T+N余额内扣除金额 ，如果更新失败，更改 退款记录 为6，让用户重新发起退款
+			if (bookbal.compareTo(rfamtoutfee)>=0) {
+				String updateBookbalSql="update pg_sm_purse set bookbal=bookbal-? where maid=? ";
+				int count=dao.update(updateBookbalSql, rfamtoutfee,maid);
+				if (count==0) {
+					dao.update(updateOrderSql, "FAIL","扣减T+N金额失败",refundpwid);
+					return "扣款失败，请重新退款";
+				}
+			//当T+N余额 +可提现余额>退款金额 直接从 T+N余额内扣除金额 ，如果更新失败，更改 退款记录 为6，让用户重新发起退款
+			}else if(bookbal.compareTo(rfamtoutfee)<0&&(bookbal.add(balance)).compareTo(rfamtoutfee)>0){
+				String updateBookbalSql="update pg_sm_purse set balance=balance-?+bookbal,bookbal=0,curamt=balance where maid=? ";
+				int count=dao.update(updateBookbalSql, rfamtoutfee,maid);
+				if (count==0) {
+					dao.update(updateOrderSql, "FAIL","扣减T+0金额失败",refundpwid);
+					return "扣款失败，请重新退款";
+				}
+			}
+		}
 
 		if(18==fiid.intValue()){
 			return cupsPayService.cupsRefund(orderid,amount,oriMap);
@@ -247,7 +430,10 @@ public class ManageService {
 		if (!"1".equals(txnType)) return "非退款交易不能做退款查询";
 		
 		if ("1".equals(status)) return "退款成功";
-		
+		if ("6".equals(status)){
+			logger.info("[退款] 订单{} 原状态 为失败 ",orderid);
+			return "FAIL";
+		}		
 		BigDecimal fiid = (BigDecimal) refundMap.get("FIID");
 		if (25 == fiid.intValue()) {
 			return baiduPayService.refundQuery(refundMap);
@@ -289,7 +475,7 @@ public class ManageService {
 	
 	public boolean addDayMerAmt(String merid,Double amt) throws BusinessException{
 		boolean flag=false;
-		String querySql=" select nvl(t1.minfo1,9900) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
+		String querySql=" select nvl(t1.minfo1,10000) singAmt, nvl(t1.minfo2,50000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
 						+ " where t.maid = t1.maid and t.hrt_mid =? ";
 		List<Map<String, Object>> list = dao.queryForList(querySql, merid);
 		if(list.size()>0){
@@ -321,7 +507,10 @@ public class ManageService {
 	public boolean checkDayMerAmtForLMF(String merid,Double amt,String unno) throws BusinessException{
 		boolean flag=false;
 		String querySql="";
-		if (unno.contains(daeUnno)) {
+	    if ("".equals(unno)||specUnno.contains(unno)) {
+		     querySql=" select nvl(t1.minfo1,10000) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
+				+ " where t.maid = t1.maid and t.hrt_mid =? ";
+	    }else if (!"".equals(unno)&&daeUnno.contains(unno)) {
 			querySql=" select nvl(t1.minfo1,20000) singAmt, nvl(t1.minfo2,100000) dayLimitAmt from hrt_merchacc t, pg_merchlimit t1 "
 					+ " where t.maid = t1.maid and t.hrt_mid =? ";
 		}else{
@@ -541,13 +730,11 @@ public class ManageService {
 	 */
 	public void  checkPayForDae(String merid){
 		String chOrdSql="select 1 "
-				+ "       from ( select  userid,count(1) c from plusr.pg_wechat_txn where  lmdate between trunc(sysdate,'dd') and sysdate  and mer_id=? and txnamt>9000 and paytype='2' group by  userid ) t "
+				+ "       from ( select  userid,count(1) c from  pg_wechat_txn where  lmdate between trunc(sysdate,'dd') and sysdate  and mer_id=? and txnamt>9000 and paytype='2' group by  userid ) t "
 				+ "      where t.c>=3 ";
 		List<Map<String, Object>> list=dao.queryForList(chOrdSql, merid);
 		if (list.size()>0) {
 			throw new HrtBusinessException(8000,"今日交易次数超限，暂时无法进行交易");
 		}
-		 
 	}
-	
 }

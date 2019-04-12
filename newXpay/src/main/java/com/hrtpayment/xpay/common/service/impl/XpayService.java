@@ -13,12 +13,15 @@ import org.springframework.stereotype.Service;
 
 import com.hrtpayment.xpay.baidu.service.BaiduPayService;
 import com.hrtpayment.xpay.bcm.service.BcmPayService;
+import com.hrtpayment.xpay.channel.bean.HrtPayXmlBean;
 import com.hrtpayment.xpay.cib.service.CibPayService;
+import com.hrtpayment.xpay.cmbc.bean.json.HrtCmbcBean;
 import com.hrtpayment.xpay.cmbc.service.CmbcPayService;
 import com.hrtpayment.xpay.common.dao.JdbcDao;
 import com.hrtpayment.xpay.cups.service.CupsPayService;
 import com.hrtpayment.xpay.cupsAT.service.CupsATPayService;
 import com.hrtpayment.xpay.netCups.service.NetCupsPayService;
+import com.hrtpayment.xpay.redis.RedisUtil;
 import com.hrtpayment.xpay.utils.CommonUtils;
 import com.hrtpayment.xpay.utils.exception.BusinessException;
 import com.hrtpayment.xpay.utils.exception.HrtBusinessException;
@@ -36,6 +39,8 @@ public class XpayService {
 	CmbcPayService cmbcService;
 	@Autowired
 	WechatService wechatService;
+	@Autowired
+	MerchantService merService;	
 	@Autowired
 	AliJspayService alipayService;
 	@Autowired
@@ -87,44 +92,63 @@ public class XpayService {
 		return map;
 	}
 	/**
-	 * 下单并返回支付二维码(后台生成订单号)
-	 * @param unno
-	 * @param mid
-	 * @param amount
-	 * @param bankMid
-	 * @param subject
-	 * @param fiid
-	 * @throws HrtBusinessException
+	 * 
+	 * 2018-12-19  修改
+	 * 
+	 * 更新方法 参数为  HrtCmbcBean bean
+	 * 原有多参数方法弃用
+	 * 
+	 * @param bean
 	 * @return
 	 */
-	public String getPayUrl(String unno,String mid,BigDecimal amount,String subject,String payway,String qrtid){
+//	public String getPayUrl(String unno,String mid,BigDecimal amount,String subject,String payway,String orderid,String qrtid){
+	public String getPayUrl(HrtCmbcBean bean){
 		SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss");
 		String date=format.format(new Date());
-		String orderid = "hrt" + date+CommonUtils.getRandomDecimalStr(10);
-		return getPayUrl(unno, mid, amount, subject, payway, orderid,qrtid);
-	}
-	/**
-	 * 下单并返回支付二维码
-	 * @param unno
-	 * @param mid
-	 * @param amount
-	 * @param subject
-	 * @param payway
-	 * @param orderid
-	 * @return
-	 */
-	public String getPayUrl(String unno,String mid,BigDecimal amount,String subject,String payway,String orderid,String qrtid){
+		String orderid = "qrpay" + date+CommonUtils.getRandomDecimalStr(8);
 		//根据MID  判断 走哪个银行
 		Map<String, Object> map;
+		String unno=null;
+		String mid=bean.getMid();
+		BigDecimal amount=bean.getAmount();
+		String subject=bean.getSubject();
+		String payway=bean.getPayway();
+		String qrtid=bean.getQrtid();
+		bean.setOrderid(orderid);
 		int fiid;
+		/*
+		 *  2019-01-17 修改
+		 *  
+		 *  3min<交易间隔 <4min 计为风控交易
+		 * 
+		 */
+		String oldOrderid="";
 		try {
-			map = cmbcService.getMerchantCode3(null, mid, payway,amount,"");
+			Map<String,Object> midOrdInfo=RedisUtil.checkMid(bean.getMid(),orderid);
+			//获取oldOrderid 如果不为空 则将newOrderid 和oldorderid 都设置成风险交易 
+			if (!"".equals(String.valueOf(midOrdInfo.get("oldOrderid")))&&null!=midOrdInfo.get("oldOrderid")) {
+				oldOrderid=String.valueOf(midOrdInfo.get("oldOrderid"));
+			}
+		} catch (Exception e) {
+			logger.error("[大额交易]校验时长出错，本条交易跳过时长校验，{}",e.getMessage());
+		}
+		try {
+			/*
+			 * 2018-12-19 修改 
+			 * 
+			 * 手刷启用对应的商户号查询方法  getMerchantForMpos 
+			 * 手刷商户号查询弃用原有 getMerchantCode3
+			 * 
+			 */
+//			map = cmbcService.getMerchantCode3(null, mid, payway,amount,"");
+			map= cmbcService.getMerchantForMpos(bean);
 			fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
 			checkBankTxnLimit(fiid,amount,payway);
 		} catch (BusinessException e1) {
 			throw new HrtBusinessException(e1.getCode(), e1.getMessage());
 		}
 		String bankMid = (String) map.get("MERCHANTCODE");
+		String isCredit= String.valueOf(map.get("isCredit")==null?1:map.get("isCredit"));
 		
 		String QrCode = null;
 		if(fiid==25){
@@ -170,7 +194,7 @@ public class XpayService {
 					}
 				} else if ("WXPAY".equals(payway)) {
 					netCupsPayService.insertPubaccOrder(unno, mid, orderid, subject, amount, fiid, bankMid);
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				} 
 			} catch (BusinessException e) {
 				throw new HrtBusinessException(e.getCode(), e.getMessage());
@@ -178,7 +202,7 @@ public class XpayService {
            }else if(fiid==54){
    			try {
   				 QrCode = cupsATPayService.cupsAliPay(unno, mid, bankMid, subject, amount, fiid, payway, orderid,
-  							qrtid, "", "",String.valueOf(map.get("CHANNEL_ID")));
+  							qrtid, "", "",String.valueOf(map.get("CHANNEL_ID")),isCredit);
   			} catch (BusinessException e) {
   				throw new HrtBusinessException(e.getCode(), e.getMessage());
   			}
@@ -186,14 +210,14 @@ public class XpayService {
 			if("WXPAY".equals(payway)){
 				try {
 					cupsATPayService.insertPubaccOrder(unno, mid, orderid, subject, amount, fiid, bankMid);
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				} catch (BusinessException e) {
 					throw new HrtBusinessException(e.getCode(), e.getMessage());
 				}
 			}else if ("WXZF".equals(payway)){
 				try {
 					QrCode= cupsATPayService.cupsWxPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-							 payway,orderid, qrtid,"","",String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+							 payway,orderid, qrtid,"","",String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 				} catch (BusinessException e) {
 					throw new HrtBusinessException(e.getCode(), e.getMessage());
 				}
@@ -204,14 +228,14 @@ public class XpayService {
 			if ("WXPAY".equals(payway)) {
 				try {
 					netCupsPayService.insertPubaccOrder(unno, mid, orderid, subject, amount, fiid, bankMid);
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				} catch (BusinessException e) {
 					throw new HrtBusinessException(e.getCode(), e.getMessage());
 				}
 			}else if ("WXZF".equals(payway)){
 				try {
 					QrCode= netCupsPayService.cupsWxPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-							 payway,orderid, qrtid,"","",String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+							 payway,orderid, qrtid,"","",String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 				} catch (BusinessException e) {
 					throw new HrtBusinessException(e.getCode(), e.getMessage());
 				}
@@ -222,7 +246,7 @@ public class XpayService {
 			if ("ZFBZF".equals(payway)){
 				try {
 					QrCode= netCupsPayService.cupsAliPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-							 payway,orderid, qrtid,"","", String.valueOf(map.get("CHANNEL_ID")));
+							 payway,orderid, qrtid,"","", String.valueOf(map.get("CHANNEL_ID")),isCredit);
 				} catch (BusinessException e) {
 					throw new HrtBusinessException(e.getCode(), e.getMessage());
 				}
@@ -231,6 +255,16 @@ public class XpayService {
 			}
 		}else{
 			throw new HrtBusinessException(8000, "交易失败");
+		}
+		/*
+		 * 2019-01-17  修改
+		 * 
+		 * 更新订单风控标识 riskflag =1 
+		 * 
+		 */
+		if (!"".equals(oldOrderid)&&null!=oldOrderid) {
+			merService.updateOrderRisk(oldOrderid,orderid);
+			logger.info("[大额手刷]风控交易{}:{},{}",mid,oldOrderid,orderid);
 		}
 		
 		return QrCode;
@@ -274,10 +308,11 @@ public class XpayService {
 		String QrCode = null;
 		try {
 			//根据MID  判断 走哪个银行
-			Map<String, Object> map = cmbcService.getMerchantCode3(null, mid, payway,amt,"");
+			Map<String, Object> map = cmbcService.getMerchantCode3(null, mid, payway,amt,"","ZS");
 			int fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
 			checkBankTxnLimit(fiid, amt, payway);
 			String bankMid = (String) map.get("MERCHANTCODE");
+			String isCredit= String.valueOf(map.get("isCredit")==null?1:map.get("isCredit"));
 			int updateCount=0;
 			if(fiid==25){
 				QrCode = baiduPayService.posGetQrCode("", mid, bankMid, subject, amt, fiid, orderid, "", "BDQB");
@@ -291,7 +326,7 @@ public class XpayService {
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
 					}
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				}else if("ZFBZF".equals(payway)){
 					String key=String.valueOf(map.get("MINFO2"));
 					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=? where status='A' and mer_orderid=?";
@@ -317,11 +352,11 @@ public class XpayService {
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
 					}
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				}
 			}else if (fiid ==54||fiid ==53) {
-				if("ZFBZF".equals(payway)||"WXZF".equals(payway)){
-					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=? where status='A' and mer_orderid=?";
+				if("ZFBZF".equals(payway)){
+					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=?,trade_type='ZS' where status='A' and mer_orderid=?";
 					updateCount=dao.update(updateSql, bankMid,fiid,tranType,orderid);
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
@@ -329,28 +364,28 @@ public class XpayService {
 					QrCode =cupsATPayService.posGetQrCode(bankMid, subject, amt, fiid, orderid, payway,String.valueOf(map.get("CHANNEL_ID")));
 				}
 				if ("WXPAY".equals(payway)) {
-					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=? where status='A' and mer_orderid=?";
+					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=?,trade_type='ZS' where status='A' and mer_orderid=?";
 					updateCount=dao.update(updateSql, bankMid,fiid,tranType,orderid);
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
 					}
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				}
 			}else if (fiid ==60||fiid ==61){
 				if("ZFBZF".equals(payway)){
-					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=? where status='A' and mer_orderid=?";
+					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=?,trade_type='ZS' where status='A' and mer_orderid=?";
 					updateCount=dao.update(updateSql, bankMid,fiid,tranType,orderid);
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
 					}
 					QrCode =netCupsPayService.posGetQrCode(bankMid, subject, amt, fiid, orderid, payway, String.valueOf(map.get("CHANNEL_ID")));
 				}else if ("WXPAY".equals(payway)) {
-					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=? where status='A' and mer_orderid=?";
+					String updateSql=" update pg_wechat_txn t set t.bankmid=?,t.fiid=? ,t.trantype=?,trade_type='ZS' where status='A' and mer_orderid=?";
 					updateCount=dao.update(updateSql, bankMid,fiid,tranType,orderid);
 					if(updateCount<1){
 						throw new BusinessException(8000, "订单已失效,请重新下单");
 					}
-					QrCode = wechatService.getPubaccPayUrl(fiid, orderid);
+					QrCode = wechatService.getPubaccPayUrl(fiid, orderid,isCredit);
 				} 
 				
 			}
@@ -362,7 +397,103 @@ public class XpayService {
 		return QrCode;
 	}
 	
+	/**
+	 * 
+	 * 2019-01-07 新增
+	 * 
+	 * 机具被扫交易 逻辑处理
+	 * 
+	 * @param bean
+	 * @return
+	 * @throws BusinessException
+	 */
+       public String barcodePay(HrtPayXmlBean bean) throws BusinessException {
+		
+    	/*
+    	 * 判断条码支付类型
+    	 * 根据上送的authcode判断是否与上送的payway相符合
+    	 */
+		checkAuthCodePayType(bean);
+		//根据MID  判断 走哪个银行
+		Map<String, Object> map;
+		String mid=bean.getMid();
+		BigDecimal amount = new BigDecimal(bean.getAmount());
+		String subject = bean.getSubject();
+		String payway=bean.getPayway();
+		int fiid;
+		try {
+			//使用轮询组查号规则  getMerchantForMpos
+			HrtCmbcBean cmbcBean=new HrtCmbcBean();
+			cmbcBean.setAmount(amount);
+			cmbcBean.setMid(mid);
+			cmbcBean.setPayway(payway);
+			cmbcBean.setOrderid(bean.getOrderid());
+			map= cmbcService.getMerchantForMpos(cmbcBean);
+			fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
+			checkBankTxnLimit(fiid,amount,payway);
+		} catch (BusinessException e1) {
+			throw new HrtBusinessException(e1.getCode(), e1.getMessage());
+		}
+		String isCredit= String.valueOf(map.get("isCredit")==null?1:map.get("isCredit"));
+		String merchantCode = String.valueOf(map.get("MERCHANTCODE"));
+		if (subject == null || "".equals(subject)) {
+			subject = String.valueOf(map.get("SHORTNAME"));
+		}
+		String resp;
+		if (fiid == 43) { 
+			resp = bcmPayService.barCodePay(bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),bean.getPaymode());
+		}else if (fiid == 46) { 
+			resp = bcmPayService.barCodePay(bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),bean.getPaymode());
+		}else if (fiid == 53 ) { 
+			resp = cupsATPayService.cupsWxBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
+		}else if (fiid == 54 ) { 
+			resp = cupsATPayService.cupsAliBsPay(bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")),isCredit);
+		}else if (fiid == 60 ) { 
+			resp = netCupsPayService.cupsWxBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
+		}else if (fiid == 61 ) { 
+			resp = netCupsPayService.cupsAliBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")),isCredit);
+		} else{
+			 throw new BusinessException(8005,"未知错误");
+		}
+		return resp;
+	}
 	
+   	/**
+   	 * 判断条码支付类型
+   	 * @param bean
+   	 * @throws BusinessException 
+   	 */
+   	private void checkAuthCodePayType(HrtPayXmlBean bean) throws BusinessException{
+   		if ("WXZF".equals(bean.getPayway()) || "ZFBZF".equals(bean.getPayway())
+   				|| "QQZF".equals(bean.getPayway()) || "BDQB".equals(bean.getPayway())|| "JDZF".equals(bean.getPayway())|| "JDPAY".equals(bean.getPayway())) {
+   		}else{
+   			throw new BusinessException(9010,"不支持的支付通道");
+   		}
+   		try {
+   			if("WXZF".equals(bean.getPayway())){
+   				bean.setPaymode("1");
+   			}else if("ZFBZF".equals(bean.getPayway())){
+   				bean.setPaymode("2");
+   			}else if(("JDZF".equals(bean.getPayway())|| "JDPAY".equals(bean.getPayway()))){
+   				bean.setPaymode("6");
+   			}else if("BDQB".equals(bean.getPayway())){
+   				bean.setPaymode("5");
+   			}else if("QQZF".equals(bean.getPayway())){
+   				bean.setPaymode("4");
+   			}else{
+   				throw new BusinessException(8005,"请扫描正确的付款码!");
+   			}
+   		} catch (Exception e) {
+   			throw new BusinessException(8005,"请扫描正确的付款码!");
+   		}
+   	}
+    
 	/**
 	 * 校验通道无卡单笔限额，单日限额
 	 * @param fiid

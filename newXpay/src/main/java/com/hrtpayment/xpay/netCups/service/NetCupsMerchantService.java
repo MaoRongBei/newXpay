@@ -219,9 +219,19 @@ public class NetCupsMerchantService {
 				logger.error("[网联-支付宝]商户入驻查询失败，订单号{},子商户号未返回", resMap.get("out_trade_no"));
 				throw new BusinessException(8000, "商户入驻查询失败");
 			}
-			String updateSql = "update Bank_MerRegister set merchantcode=?, approvestatus='Y' ,lmdate=sysdate,rtnmsg=?  "
-					+ " where (approvestatus<>'Y' or approvestatus is null )  and  merchantid=? ";
-			dao.update(updateSql, sub_merchant_id, getRtMsg(rtnCode,rtnMsg), merchantid);
+			String indirect_level = resMap.get("indirect_level");
+			String indirect_level_msg = "";
+			Integer indirect_optstatus=0;
+			if (!"INDIRECT_LEVEL_M3".equals(indirect_level)) {
+				indirect_level_msg=resMap.get("memo");
+			}else{
+				indirect_level_msg="M3商户信息已完善";
+				indirect_optstatus=1;
+			}
+			String updateSql = "update Bank_MerRegister set merchantcode=?, approvestatus='Y' ,lmdate=sysdate,rtnmsg=? ,indirect_level=? ,indirect_level_msg=?,"
+					+ " indirect_optstatus=? "
+					+ " where   merchantid=? ";
+			dao.update(updateSql, sub_merchant_id, getRtMsg(rtnCode,rtnMsg),indirect_level ,indirect_level_msg,indirect_optstatus, map.get("merchantid"));
 			return rtnMsg;
 		} else {
 			String updateSql = "update Bank_MerRegister set rtnmsg=?  where approvestatus<>'Y' and  merchantid=? ";

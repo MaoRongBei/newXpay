@@ -413,7 +413,7 @@ public class BcmPayService implements WxpayService , AlipayService{
 		}
 		
 		//1.查询原订单是否存在
-		String querySql = "select mer_orderid,status ,unno,mer_id, txnamt,mer_tid,trantype from pg_wechat_txn t where t.mer_orderid=?";
+		String querySql = "select mer_orderid,status ,unno,mer_id, txnamt,mer_tid,trantype,lmdate from pg_wechat_txn t where t.mer_orderid=?";
 		List<Map<String, Object>> list = dao.queryForList(querySql, orderId);
 		if (list.size() < 1) {
 			logger.info("[交通银行]支付异步通知,未查询到订单号为{}的订单", orderId);
@@ -765,7 +765,7 @@ public class BcmPayService implements WxpayService , AlipayService{
 	
 	
 	@Override
-	public String getWxpayPayInfo(String orderId, String openid) {
+	public String getWxpayPayInfo(String orderId, String openid,String isCredit) {
 		String querySql="select w.bankmid, w.detail,w.txnamt,w.detail,w.mer_tid,w.status,w.trantype from pg_wechat_txn w"
 				+ " where mer_orderid =?";
 		List<Map<String, Object>> list = dao.queryForList(querySql, orderId);
@@ -908,7 +908,7 @@ public class BcmPayService implements WxpayService , AlipayService{
 	}
 
 	@Override
-	public String getAlipayPayInfo(String orderId, String openid,String userid) {
+	public String getAlipayPayInfo(String orderId, String openid,String userid,String isCredit) {
 		/**
 		 * TO-DO
 		 * 支付宝 商家支付 （JSAPI）

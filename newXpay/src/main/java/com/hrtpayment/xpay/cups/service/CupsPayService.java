@@ -123,8 +123,8 @@ public class CupsPayService {
 		}
 		//插入订单号
 		String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-				+ "status, cdate, lmdate,qrcode,unno,mer_tid,bank_type,trantype) values"
-				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','3')";
+				+ "status, cdate, lmdate,qrcode,unno,mer_tid,trade_type,trantype,bank_type) values"
+				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','3','BS')";
 		dao.update(insertSql, 18, bean.getOrderid(), "", bean.getAmount(), bean.getMid(), bean.getQrcode(), bean.getUnno(),
 				bean.getTid());
 		
@@ -170,6 +170,8 @@ public class CupsPayService {
 				bean.setPaymode("3");
 				bean.setStatus("R");
 			} else {
+				String updateSql = "update pg_wechat_txn set bankmid=?, respcode=?, respmsg=?,time_end=? where mer_orderid=? ";
+				int count = dao.update(updateSql, bankMid, respCode, respMsg, orderTime, bean.getOrderid());
 				RedisUtil.addFailCountByRedis(1);
 				bean.setStatus("E");
 				bean.setErrcode("8000");
@@ -207,8 +209,8 @@ public class CupsPayService {
 		
 		//插入订单号
 		String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-				+ "status, cdate, lmdate,qrcode,unno,mer_tid,bank_type,trantype) values"
-				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','10')";
+				+ "status, cdate, lmdate,qrcode,unno,mer_tid,trade_type,trantype,bank_type) values"
+				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','10','BS')";
 		dao.update(insertSql, 18, bean.getOrderid(), "", bean.getAmount(), bean.getMid(), bean.getQrcode(), bean.getUnno(),
 				bean.getTid());
 		
@@ -253,6 +255,8 @@ public class CupsPayService {
 				logger.info("[银联二维码]-被扫交易订单号{}，下单更新记录{}", bean.getOrderid(), count);
 				bean.setStatus("R");
 			} else {
+				String updateSql = "update pg_wechat_txn set bankmid=?, respcode=?, respmsg=?,time_end=? where mer_orderid=? ";
+				int count = dao.update(updateSql, bankMid, respCode, respMsg, orderTime, bean.getOrderid());
 				RedisUtil.addFailCountByRedis(1);
 				bean.setStatus("E");
 				bean.setErrcode("8000");
@@ -290,8 +294,8 @@ public class CupsPayService {
 		
 		//插入订单号
 		String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid, detail, txnamt, mer_id,"
-				+ "status, cdate, lmdate,qrcode,unno,mer_tid,bank_type,trantype,ISPOINT) values"
-				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','8',1)";
+				+ "status, cdate, lmdate,qrcode,unno,mer_tid,trade_type,trantype,ISPOINT,bank_type) values"
+				+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,'0',sysdate,sysdate,?,?,?,'BS','8',1,'BS')";
 		dao.update(insertSql, 18, orderid, "", amtount, mid, qrno, unno,tid);
 		
 		/**
@@ -335,6 +339,8 @@ public class CupsPayService {
 				logger.info("[银联二维码]-被扫交易订单号{}，下单更新记录{}",orderid, count);
 				return "R";
 			} else {
+				String updateSql = "update pg_wechat_txn set bankmid=?, respcode=?, respmsg=?,time_end=? where mer_orderid=? ";
+				int count = dao.update(updateSql, bankMid, respCode, respMsg, orderTime, orderid);
 				RedisUtil.addFailCountByRedis(1);
 				logger.error("[银联二维码]-被扫交易失败{}",respMsg);
 				throw new BusinessException(8000,respMsg );
@@ -454,8 +460,8 @@ public class CupsPayService {
 				 */
 				String sql = "insert into pg_wechat_txn (pwid,fiid, txntype, "+
 						"mer_orderid, detail, txnamt, mer_id, bankmid, respcode, respmsg, "
-						+ "status, cdate, lmdate,qrcode,unno,mer_tid,time_end,bank_type,trantype) values"
-						+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,?,'0',sysdate,sysdate,?,?,?,?,'ZS','3')";
+						+ "status, cdate, lmdate,qrcode,unno,mer_tid,time_end,trade_type,trantype,bank_type) values"
+						+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,?,'0',sysdate,sysdate,?,?,?,?,'ZS','3','ZS')";
 				int count=dao.update(sql,18,bean.getOrderid(),"",bean.getAmount(),bean.getMid(),bankMid,
 						respCode,respMsg,qrCode,bean.getUnno(),bean.getTid(),orderTime);
 				return qrCode;
@@ -1280,12 +1286,19 @@ public class CupsPayService {
 		 */
 		if (orderCon!=0) {
 			String bankmid=bean.getBankMid();
+			String mid=bean.getMid();
 			String sql="select merchantcode,merchantname,category  mercatcode,ht.hpid,ht.txnmaxcount,ht.groupname"
 					+ " from bank_merregister bm ,hrt_termaccpool ht ,hrt_fi hf "
 					+ " where bm.hrid=ht.btaid  and bm.fiid=hf.fiid   and bm.merchantcode=? "
 					+ "  and ht.status ='1'  and hf.status='1' and hf.fiinfo2 is not null "
+					+ "  and ht.groupname =(select merchantid from (select a.merchantid from Bank_MerRegister a, "
+					+ "  (select hrid,status,hrt_MID  from plusr.Hrt_Merbanksub where hrt_MID =?) b, "
+					+ "  Hrt_Merchacc ma,hrt_fi f where  ma.hrt_mid = b.hrt_mid and a.hrid = b.hrid and  "
+					+ "  a.fiid=f.fiid and a.approvestatus='Y' and a.status=1  "
+					+ "  and b.status=1 and ma.status=1 and f.fiinfo2 like ? "
+					+ "  order by a.fiid desc) where rownum=1) "
 					+ "  and bm.approvestatus='Y'  ";
-			list = dao.queryForList(sql,bankmid);
+			list = dao.queryForList(sql,bankmid,mid,"%LMF%");
 			if (list.size()<1) throw new BusinessException(8001,"指定通道未开通");
 
 			for (Map<String, Object> bankMidInfo :list) { 
@@ -1455,7 +1468,7 @@ public class CupsPayService {
 					+ " and t1.txnmaxamt>=nvl(t1.txnamt,0)+? and t1.groupname=? "
 					+ " and T2.status=1 order by T1.txnamt asc) where rownum=1 ";
 			 list = dao.queryForList(poolSql,amt,groupName);
-			 if (list.size()<1) throw new BusinessException(8001,"指定通道未开通");
+			 if (list.size()<1) throw new BusinessException(8001,"请尝试降低交易金额再次消费！");
 			 for(Map<String, Object> mm :list){
 			      Integer hpid = Integer.parseInt(String.valueOf(mm.get("HPID")));
 				   String updateSql=" update HRT_TERMACCPOOL t set t.txnamt=nvl(t.txnamt,0)+?,"

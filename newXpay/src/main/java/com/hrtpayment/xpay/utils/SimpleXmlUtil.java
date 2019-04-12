@@ -100,11 +100,12 @@ public class SimpleXmlUtil {
 		Arrays.sort(keys);
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < keys.length; i++) {
-			if (!keys[i].equals("sign") && null!=map.get(keys[i]) && !"".equals(map.get(keys[i]))) {
+			if (!keys[i].equals("sign") && null!=map.get(keys[i]) && !"".equals(map.get(keys[i]))&&!"null".equals(map.get(keys[i]))) {
 				sb.append(String.format("%s=%s&",keys[i],map.get(keys[i])));
 			}
 		}
 		sb.append("key=").append(key);
+		System.out.println(sb.toString());
 		return Md5Util.digestUpperHex(sb.toString().getBytes(CharsetUtil.UTF8));
 	}
 	public static String getMd5SignByStr(String str) {

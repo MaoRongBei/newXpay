@@ -18,7 +18,7 @@
 	}
 	header{
 		text-align: center;
-		padding: 10% 0px;
+		padding: 10% 3px;
 		color: #328cf4;
 	}
 	header img{
@@ -142,7 +142,29 @@
 	var statusPic =document.querySelector("#statusPic");
 	var statusText =document.querySelector("#statusText");
 	var errText =document.querySelector("#errText");
-	if (staus.get("status")==="3") {
+	if (staus.get("status")==="10") {
+		statusPic.setAttribute("src","err.png");
+		statusText.innerHTML="现在非交易时段，扫码收款的交易时段"+staus.get("startTime")+"—"+staus.get("endTime")+"，请在交易时段进行交易，感谢您的理解和支持！";
+		statusText.style.cssText="color:#999";
+		sucDom.style.cssText="display:none";
+		errDom.style.cssText="display:block";
+	}else if (staus.get("status")==="9") {
+		statusPic.setAttribute("src","err.png");
+		statusText.innerHTML="您的二维码已失效。<br/>请到APP的“扫码收款”中“重新获取二维码并保存相册”，获取的二维码有效期为100秒，请您及时完成付款操作！";
+		statusText.style.cssText="color:#999";
+		sucDom.style.cssText="display:none";
+		errDom.style.cssText="display:block";
+		//失败原因
+		errDom.innerHTML=staus.get("msg");//"失败原因"
+	}else if (staus.get("status")==="8") {
+		statusPic.setAttribute("src","err.png");
+		statusText.innerHTML="您的二维码已经失效，请到APP的“扫码收款”中“重新获取二维码并保存相册”，获取的二维码有效期为100秒，请您及时完成付款操作！";
+		statusText.style.cssText="color:#999";
+		sucDom.style.cssText="display:none";
+		errDom.style.cssText="display:block";
+		//失败原因
+		errDom.innerHTML=staus.get("msg");//"失败原因"
+	}else if (staus.get("status")==="3") {
 		statusPic.setAttribute("src","err.png");
 		statusText.innerHTML="支付失败";
 		statusText.style.cssText="color:#999";

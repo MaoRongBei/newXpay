@@ -94,13 +94,14 @@ public class SmzfService {
 		 * 
 		 */
 		String area=bean.getArea(); //交易地点
-		Map<String, Object> map = cmbcPay.getMerchantCode3(unno, mid, payway,amount,area);
+		Map<String, Object> map = cmbcPay.getMerchantCode3(unno, mid, payway,amount,area,"ZS");
 		if (subject == null || "".equals(subject)) {
 			subject = String.valueOf(map.get("SHORTNAME"));
 		}
 		fiid =Integer.parseInt(String.valueOf(map.get("FIID")));
 		xpayService.checkBankTxnLimit(fiid,amount,payway);
 		String QrCode="";
+		String isCredit= String.valueOf(map.get("isCredit")==null?1:map.get("isCredit"));
 		if(fiid==25){
 			QrCode=baiduPayService.getQrCode(unno, mid, map.get("MERCHANTCODE")==null?"":String.valueOf(map.get("MERCHANTCODE")), 
 					subject, amount, fiid, orderid, tid,hybRate,hybType);
@@ -119,16 +120,16 @@ public class SmzfService {
 					 payway,orderid, tid,hybRate,hybType);
 		}else if(fiid==54){
 			QrCode= cupsATPayService.cupsAliPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("CHANNEL_ID")));
+					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if(fiid==53){
 			QrCode= cupsATPayService.cupsWxPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if(fiid==60){
 			QrCode= netCupsPayService.cupsWxPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+					 payway,orderid, tid,hybRate,hybType,String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if(fiid==61){
 			QrCode= netCupsPayService.cupsAliPay(unno, mid, String.valueOf(map.get("MERCHANTCODE")), subject, amount, fiid, 
-					payway, orderid, tid, hybRate, hybType,String.valueOf(map.get("CHANNEL_ID")));
+					payway, orderid, tid, hybRate, hybType,String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		} else{
 			throw new BusinessException(8005, "未知错误");
 		}
@@ -149,8 +150,9 @@ public class SmzfService {
          */
 		String area=bean.getArea();
 		BigDecimal amount = new BigDecimal(bean.getAmount());
-		Map<String, Object> map = cmbcPay.getMerchantCode3(bean.getUnno(), bean.getMid(), bean.getPayway(),amount,area);
+		Map<String, Object> map = cmbcPay.getMerchantCode3(bean.getUnno(), bean.getMid(), bean.getPayway(),amount,area,"BS");
 		int fiid=Integer.parseInt(String.valueOf(map.get("FIID")));
+		String isCredit= String.valueOf(map.get("isCredit")==null?1:map.get("isCredit"));
 		xpayService.checkBankTxnLimit(fiid,amount,bean.getPayway());
 		String merchantCode = String.valueOf(map.get("MERCHANTCODE"));
 		if (subject == null || "".equals(subject)) {
@@ -175,16 +177,16 @@ public class SmzfService {
 					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),bean.getPaymode());
 		}else if (fiid == 53 ) { 
 			resp = cupsATPayService.cupsWxBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
-					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if (fiid == 54 ) { 
 			resp = cupsATPayService.cupsAliBsPay(bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
-					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")));
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if (fiid == 60 ) { 
 			resp = netCupsPayService.cupsWxBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
-					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")));
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("MCH_ID")), String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		}else if (fiid == 61 ) { 
 			resp = netCupsPayService.cupsAliBsPay (bean,bean.getUnno(), bean.getMid(), fiid, bean.getPayway(), bean.getOrderid(),
-					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")));
+					merchantCode, bean.getAuthcode(), amount, subject, bean.getTid(),String.valueOf(map.get("CHANNEL_ID")),isCredit);
 		} else{
 			 throw new BusinessException(8005,"未知错误");
 		}

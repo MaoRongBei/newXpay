@@ -36,9 +36,9 @@ public class AliJsPayController {
 	 * @param code
 	 * @return
 	 */
-	@RequestMapping("alipay_{fiid:[0-9]+}_{orderid}")
+	@RequestMapping("alipay_{fiid:[0-9]+}_{orderid}_{isCredit}")
 	@ResponseBody
-	public String pay(@PathVariable int fiid, @PathVariable String orderid, @RequestParam String auth_code) {
+	public String pay(@PathVariable int fiid, @PathVariable String orderid, @PathVariable String isCredit, @RequestParam String auth_code) {
 		logger.info("获取支付宝code:" + auth_code + " 订单号：" + orderid);
 		// 获取支付宝code:685c79f68dab4b388152b85bf290XD29 订单号：hrt201805281659544835799699
 	
@@ -53,7 +53,7 @@ public class AliJsPayController {
 			Map<String, String> usrInfo= alipay.getOpenid(fiid, auth_code,orderid);
 			String opendId=usrInfo.get("authcode");
 			String userid=usrInfo.get("userid");
-			String tradeNO=alipay.getJsPayInfo(fiid, orderid, opendId,userid);
+			String tradeNO=alipay.getJsPayInfo(fiid, orderid, opendId,userid,isCredit);
 			sb.append("$(function(){tradePay('"+tradeNO+"');");
 			sb.append("$(\"#payButton\").click(function() { tradePay('"+tradeNO+"');});"); 
 			sb.append(" $(\"#closeButton\").click(function() {AlipayJSBridge.call('closeWebview');});");
@@ -68,12 +68,20 @@ public class AliJsPayController {
 				sb.append("window.location.href=\"https://xpay.hybunion.cn/HYBComboPayment/successPageRedirect.do?orderNo="+orderid+"\"}");
 			}else if("96207320".equals(orderid.substring(0,8))){
 				sb.append("window.location.href=\"https://xpay.yrmpay.com/YRMComboPayment/successPageRedirect.do?orderNo="+orderid+"\"}");
+			}else if("11212120".equals(orderid.substring(0,8))){
+				sb.append("window.location.href=\"https://xpay.hybunion.cn/LMFComboPayment/successPageRedirect.do?orderNo="+orderid+"&state=0\"}");
 			}else{
 				sb.append("AlipayJSBridge.call('closeWebview');}");
 			}
 			sb.append( "else if(\"8000\" == data.resultCode){ alert(\"订单支付中，请在支付订单内查询订单。\");AlipayJSBridge.call('closeWebview');}"
-					+ "else {alert(\"支付失败，请重新下单。\");AlipayJSBridge.call('closeWebview');}"
-					+ " });});}");
+					+ "else {alert(\"支付失败，请重新下单。\");");
+			if("11212120".equals(orderid.substring(0,8))){
+				sb.append("window.location.href=\"https://xpay.hybunion.cn/LMFComboPayment/successPageRedirect.do?orderNo="+orderid+"&state=1\";}");
+			}else{
+				sb.append("AlipayJSBridge.call('closeWebview');}");
+			}
+//			sb.append( "AlipayJSBridge.call('closeWebview');}");
+			sb.append(  " });});}");
 			sb.append("</script>");
 		} catch (BusinessException e) {
 			sb.append(String.format("alert('%s')",e.getMessage()));

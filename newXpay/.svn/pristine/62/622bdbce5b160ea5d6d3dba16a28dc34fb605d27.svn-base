@@ -1,0 +1,44 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>微信支付</title>
+<script type="text/javascript">
+var LocString = String(window.document.location.href);
+
+function GetQueryString(str) {
+	var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+			.exec(LocString), tmp;
+	if (rs)
+		return rs[2];
+	else
+		return rs;
+} 
+
+
+var appid = GetQueryString("appid");
+var timeStamp = GetQueryString("timeStamp");
+var nonceStr = GetQueryString("nonceStr");
+var package1 = GetQueryString("package");
+var signType = GetQueryString("signType");
+var paySign = GetQueryString("paySign");
+var onBridgeReady = function() {	
+WeixinJSBridge.invoke('getBrandWCPayRequest', 
+//{"appId":"wx2421b1c4370ec43b","timeStamp":"1523868404","nonceStr":"0f55f355dd7142efbddee0cb4175b467","package":"prepay_id=wx201804161646442fa40763980909505129","signType":"RSA","paySign":"t8adqdW/wGZsizEFZdW2hfFdHGz+tax+/YARsJAtAk85hRBAAUD3+iiIAQ+6TsiEbBbAz7C1XngIFPC4o1At7xCCWCQWNW3GOm86TB937YcToxB9wo2mmp1ZDMgae8LVylFQ7qh/UqWdUrnQWpy53ZL9UxdnUZlFeBbYfN/NrF2pbZgNaGzAqwqBxc6FVhtEsjOWLX7nJ6edPY24A9ynfzDWF1Mi6H5liRXD9xSc5dpGWfT90StGsgnAJSLxZ+UEqPCsUpkNuP3oWjyc7fHGT9y1pTx/cTul9X/RepqWDrJ+pfiKw8VuOthvwRfitk6AUcDTi4YitujHk6+WtVgA3w=="}
+{"appId":appid,"timeStamp":timeStamp,"nonceStr":nonceStr,"package":package1,"signType":signType,"paySign":paySign}
+//payinfo1
+,function(res) {   
+if (res.err_msg == "get_brand_wcpay_request：ok"	|| res.err_msg == "get_brand_wcpay_request:ok"){
+WeixinJSBridge.call('closeWindow');	} 
+ else {	alert('支付失败，请重新支付！'+res.err_msg); WeixinJSBridge.call('closeWindow');	}	});	};
+ 
+ if (typeof WeixinJSBridge == "undefined") {
+ if (document.addEventListener){
+ document.addEventListener('WeixinJSBridgeReady', onBridgeReady,	false);	
+ }else if (document.attachEvent) {	
+ document.attachEvent('WeixinJSBridgeReady',onBridgeReady);	
+ document.attachEvent('onWeixinJSBridgeReady', onBridgeReady);}
+ } else {onBridgeReady();} 
+ 
+ </script>
+ </head><body></body></html>

@@ -187,14 +187,15 @@ public class CupsATMerchantService {
 	 * @return
 	 * @throws BusinessException
 	 */
-	public String queryAliMerchants(String merchantid, BigDecimal fiid, String merchantName,String channelId) throws BusinessException {
+	public String queryAliMerchants(Map<String, Object> map) throws BusinessException {
 		String reqUrl = aliMerUrl;
 
-		Map<String, Object> map = new HashMap<String, Object>();
-		map.put("method", "ant.merchant.expand.indirect.query");
-		map.put("channel_id", channelId);
-		map.put("merchantid", merchantid);
-		Map<String, String> req = cupsService.getPackMessage(map);
+		Map<String, Object> merMsg = new HashMap<String, Object>();
+		merMsg.put("method", "ant.merchant.expand.indirect.query");
+		merMsg.put("channel_id", String.valueOf(map.get("channel_id")));
+		merMsg.put("merchantid", String.valueOf(map.get("merchantid")));
+		merMsg.put("mch_id", String.valueOf(map.get("mch_id")));// mchid);// 银行端提供 微信商户号
+		Map<String, String> req = cupsService.getPackMessage(merMsg);
 
 		logger.info("请求信息----->" + req);
 		String res = null;
@@ -203,7 +204,7 @@ public class CupsATMerchantService {
 			res = HttpConnectService.postForm(req, reqUrl);
 			logger.info("[银联-支付宝]商户入驻查询响应信息----->" + res);
 		} catch (Exception e) {
-			logger.info("[银联-支付宝]商户 {}入驻查询异常，错误 原因{}----->", merchantid, e.getMessage());
+			logger.info("[银联-支付宝]商户 {}入驻查询异常，错误 原因{}----->", map.get("merchantid"), e.getMessage());
 			throw new BusinessException(8000, "商户入驻查询失败");
 		}
 
@@ -221,16 +222,26 @@ public class CupsATMerchantService {
 				logger.error("[银联-支付宝]商户入驻查询失败，订单号{},子商户号未返回", resMap.get("out_trade_no"));
 				throw new BusinessException(8000, "商户入驻查询失败");
 			}
-			String updateSql = "update Bank_MerRegister set merchantcode=?, approvestatus='Y' ,lmdate=sysdate,rtnmsg=?  "
-					+ " where (approvestatus<>'Y' or approvestatus is null )  and  merchantid=? ";
-			dao.update(updateSql, sub_merchant_id, getRtMsg(rtnCode,rtnMsg), merchantid);
+			String indirect_level = resMap.get("indirect_level");
+			String indirect_level_msg = "";
+			Integer indirect_optstatus=0;
+			if (!"INDIRECT_LEVEL_M3".equals(indirect_level)) {
+				indirect_level_msg=resMap.get("memo");
+			}else{
+				indirect_level_msg="M3商户信息已完善";
+				indirect_optstatus=1;
+			}
+			String updateSql = "update Bank_MerRegister set merchantcode=?, approvestatus='Y' ,lmdate=sysdate,rtnmsg=? ,indirect_level=? ,indirect_level_msg=?,"
+					+ " indirect_optstatus=? "
+					+ " where   merchantid=? ";
+			dao.update(updateSql, sub_merchant_id, getRtMsg(rtnCode,rtnMsg),indirect_level ,indirect_level_msg,indirect_optstatus, map.get("merchantid"));
 			return rtnMsg;
 		} else {
 			String updateSql = "update Bank_MerRegister set rtnmsg=?  where approvestatus<>'Y' and  merchantid=? ";
-			dao.update(updateSql, getRtMsg(rtnCode,rtnMsg), merchantid);
-			logger.error("[银联-支付宝]商户入驻失败-通信状态失败， 商户号{},返回{}，{}", merchantid, rtnCode, rtnMsg);
+			dao.update(updateSql, getRtMsg(rtnCode,rtnMsg), map.get("merchantid"));
+			logger.error("[银联-支付宝]商户入驻查询失败-通信状态失败， 商户号{},返回{}，{}", map.get("merchantid"), rtnCode, rtnMsg);
 			RedisUtil.addFailCountByRedis(1);
-			throw new BusinessException(1002, "商户入驻失败");
+			throw new BusinessException(1002, "商户入驻查询失败");
 		}
 	}
 
@@ -308,7 +319,7 @@ public class CupsATMerchantService {
 	 */
 	public String updateAliMerchants(String hrid) throws BusinessException {
 
-		String sql = "select * from bank_merregister where hrid =?";
+		String sql = "select * from bank_merregister where  merchantid=?";
 		List<Map<String, Object>> list = dao.queryForList(sql, hrid);
 		Map<String, Object> map = list.get(0);
 
@@ -354,9 +365,6 @@ public class CupsATMerchantService {
 			throw new BusinessException(1002, "商户入驻修改失败");
 		}
 	}
-	
-	
-		
 	/**
 	 *  appid  是  String(32)  wx931386123456789e 银行服务商的公众账号 ID 
 		商户号  mch_id 是  String(32) 1451234567 银行服务商的商户号 

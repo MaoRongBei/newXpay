@@ -283,6 +283,81 @@ public class HttpConnectService {
 		return returnBody;
 	}
 	
+	
+	public static String postForm2(Map<String, Object> formMap, String urlStr) throws Exception {
+		// HashMap<String, String>
+//		log.info("发送的消息：" + formMap);
+
+		CloseableHttpClient httpclient = createSSLClientDefault();// 创建不被信任的ssl站点连接
+
+		HttpPost httpPost = new HttpPost();
+		httpPost.setURI(new URI(urlStr));
+		RequestConfig reuqestConfig = RequestConfig.custom().setSocketTimeout(Integer.parseInt(hostTimeOut))
+				.setConnectTimeout(Integer.parseInt(connTimeOut)).build();
+
+		httpPost.setConfig(reuqestConfig);
+		httpPost.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
+		// 实体转Map
+		List<NameValuePair> formparams = new ArrayList<NameValuePair>();
+		Iterator<String> it = formMap.keySet().iterator();
+		while (it.hasNext()) {
+			String key = it.next();
+			String value = String.valueOf(formMap.get(key));
+			if (value == null || "".equals(value)) {
+				continue;
+			}
+			formparams.add(new BasicNameValuePair(key, value));
+		}
+
+		UrlEncodedFormEntity urlentity;
+
+		urlentity = new UrlEncodedFormEntity(formparams, "UTF-8");
+//		StringEntity entity = new StringEntity(formparams, "utf-8"); 
+		httpPost.setEntity(urlentity);
+
+		log.info("后台发post消息URL:" + urlStr);
+		// post请求
+		CloseableHttpResponse response = null;
+		String returnBody = null;
+		try {
+			response = httpclient.execute(httpPost);
+			log.info(response.getStatusLine().toString());
+			HttpEntity entity = response.getEntity();
+			// 返回内容
+			returnBody = EntityUtils.toString(entity);
+//			log.info("解析返回内容返回Map");
+//			log.info("returnBody:" + returnBody);
+			if (returnBody == null || returnBody.equals("")) {
+				return returnBody;
+			}
+		} catch (Exception e) {
+			RedisUtil.addFailCountByRedis(1);
+			log.error("", e);
+			return returnBody;
+		} finally {
+			try {
+				if (response != null) {
+					response.close();
+				}
+			} catch (Exception e) {
+				log.error("", e);
+			} finally {
+				try {
+					// 释放资源
+					if (httpPost != null) {
+						httpPost.abort();
+					}
+				} catch (Exception e) {
+					log.error("", e);
+				}
+			}
+
+		}
+
+		return returnBody;
+	}
+	
+	
 	/**
 	 * 以表单的形式发送数据
 	 * 

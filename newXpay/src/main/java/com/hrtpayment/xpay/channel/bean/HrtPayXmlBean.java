@@ -66,13 +66,32 @@ public class HrtPayXmlBean {
 	 * 
 	 */
 	private String  area;
-	
-	
 	public String getArea() {
 		return area;
 	}
 	public void setArea(String area) {
 		this.area = area;
+	}
+	/*
+	 * 2019-01-04 新增
+	 * 
+	 * 商户名称  机具秘钥
+	 *
+	 */
+	private String merName ;
+	private String mackey ;
+ 
+	public String getMerName() {
+		return merName;
+	}
+	public void setMerName(String merName) {
+		this.merName = merName;
+	}
+	public String getMackey() {
+		return mackey;
+	}
+	public void setMackey(String mackey) {
+		this.mackey = mackey;
 	}
 	public String getIsAliSucPage() {
 		return isAliSucPage;

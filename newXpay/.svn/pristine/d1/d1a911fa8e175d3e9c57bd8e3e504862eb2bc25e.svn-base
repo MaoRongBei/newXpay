@@ -1,0 +1,27 @@
+#pro
+#url=jdbc:oracle:thin:@(description=(ADDRESS_LIST=(ADDRESS = (PROTOCOL = TCP)(HOST = 10.51.162.67)(PORT = 1521)))(FAILOVER=yes)(LOAD_BALANCE=yes)(CONNECT_DATA =(SERVER = DEDICATED)(SERVICE_NAME = pdb)))
+#username=plusr
+#password=pl04usr
+
+#url=jdbc:oracle:thin:@(description=(ADDRESS_LIST=(ADDRESS = (PROTOCOL = TCP)(HOST = 10.51.29.212)(PORT = 1521)))(FAILOVER=yes)(LOAD_BALANCE=yes)(CONNECT_DATA =(SERVER = DEDICATED)(SERVICE_NAME = admdb)))
+#username=ppusr
+#password=ppusr
+
+url=jdbc:oracle:thin:@(description=(ADDRESS_LIST=(ADDRESS = (PROTOCOL = TCP)(HOST = 10.52.11.212)(PORT = 1521)))(FAILOVER=yes)(LOAD_BALANCE=yes)(CONNECT_DATA =(SERVER = DEDICATED)(SERVICE_NAME = admdb)))
+username=ppusr
+password=ppusr
+
+
+initialSize=1
+minIdle=1
+maxActive=20
+maxWait=60000
+timeBetweenEvictionRunsMillis=60000
+minEvictableIdleTimeMillis=300000
+validationQuery=select 'x' FROM DUAL
+testWhileIdle=true
+testOnBorrow=false
+testOnReturn=false
+poolPreparedStatements=true
+maxPoolPreparedStatementPerConnectionSize=20
+filters=stat

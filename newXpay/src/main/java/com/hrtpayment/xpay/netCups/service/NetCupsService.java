@@ -292,6 +292,7 @@ public class NetCupsService {
 	 public  Map<String , String> getPackMessage(Map<String, Object> merMsg){
 		 String method=merMsg.get("method").toString();
 		 String pid=null==merMsg.get("mch_id")?merMsg.get("channel_id").toString():merMsg.get("mch_id").toString();
+		 String isCredit=String.valueOf(merMsg.get("iscredit")==null?"":merMsg.get("iscredit"));
 		 String source=pid.substring(0,pid.length()-3);
 		 Map<String, String> req =pubReq(method,pid);
 		 if ("ant.merchant.expand.indirect.create".equals(method)) {
@@ -377,6 +378,17 @@ public class NetCupsService {
 				JSONObject sub_merchant=new JSONObject(); 
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));//"2018032817054963"
 				childReq.put("sub_merchant", sub_merchant);
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//调用方法的机器的ip
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.create".equals(method)){
 			 //扫码交易  预下单 
@@ -391,6 +403,17 @@ public class NetCupsService {
 				JSONObject sub_merchant=new JSONObject(); 
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));//"2018032817054963"
 				childReq.put("sub_merchant", sub_merchant);
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//调用方法的机器的ip
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.pay".equals(method)){
 			 //条码交易 
@@ -406,6 +429,17 @@ public class NetCupsService {
 				sub_merchant.put("merchant_id", merMsg.get("bankmid"));
 				childReq.put("sub_merchant", sub_merchant);
 //				childReq.put("buyer_logon_id", "irfiat4830@sandbox.com");
+				/* 
+				 * 2018-12-06  修改
+				 * 
+				 * 根据isCredit判断该商户是否可以使用贷记卡交易
+				 * 1 可以  9 不可以
+				 *  
+				 */
+				if ("9".equals(isCredit)) {
+					//不可以使用信用卡交易
+					childReq.put("disable_pay_channels","credit_group,pcredit");//调用方法的机器的ip
+				}
 				req.put("biz_content", JSONObject.toJSON(childReq).toString());
 		 }else if ("alipay.trade.query".equals(method)){
 			 //交易查询

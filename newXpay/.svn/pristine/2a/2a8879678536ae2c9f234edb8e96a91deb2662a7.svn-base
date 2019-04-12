@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>订单支付</title>
+<style type="text/css">
+	*{
+		margin: 0;
+		padding: 0;
+		box-sizing: border-box;
+	}
+	body{
+		font-size: 14px;
+		color: #333;
+		background-color: #fff;
+	}
+	header{
+		text-align: center;
+		padding: 10% 0px;
+		color: #328cf4;
+	}
+	header img{
+		width: 25%;
+	}
+	header p{
+		line-height: 24px;
+	}
+	section ul{
+		list-style: none;
+	    width: 71%;
+	    margin: 0 auto;
+	}
+	section ul li{
+		margin-bottom: 10px;
+	}
+	#err{
+		display: none;
+		text-align: center;
+	}
+	#backpage{
+		width: 90%;
+	    background-color: #328cf4;
+	    display: block;
+	    margin: 80px auto 0;
+	    border-radius: 3px;
+	    font-size: 16px;
+	    color: #fff;
+	    border: 0;
+	    text-decoration: none;
+	    text-align: center;
+    	line-height: 44px;
+	}
+	@media only screen and (device-height:480px) and (-webkit-min-device-pixel-ratio:2){/* 兼容iphone4/4s */
+		section ul{width:81%}
+		#backpage{margin: 30px auto 0;}
+	}
+
+	@media (device-height:568px) and (-webkit-min-device-pixel-ratio:2){
+		/*iPhone 5/5s */
+		section ul{width:81%}
+		#backpage{margin: 30px auto 0;}
+	}
+	@media (min-device-width:414px){
+	    section ul{width:60%}
+	}
+</style>
+</head>
+<body>
+	<header>
+		 <img id="statusPic" src="err.png">
+		 <p id="statusText">交易异常</p>
+	</header>	
+	<section id="suc" style="display:none;">
+		<ul>
+			<li>
+				订单详情
+			</li>
+			<li>
+				<p>商户名称：<span id="accName">商户名称</span></p>
+			</li>
+			<li>
+				<p>交易卡号：<span id="accNo">**** **** **** 888</span></p>
+			</li>
+			<li>
+				<p>交易时间：<span id="orderTime"> 2017-11-01 00:00:00</span></p>
+			</li>
+			<li>
+			    <p>订单编号：<span id="orderId">123456789</span></p>
+			</li>
+			<li>
+				<p>交易类型：<span >快捷支付	</span></p>
+			</li>
+			<li>
+				<p>交易金额：¥<span id="amount">500.00</span></p>
+			</li>
+			<li>
+				<p>交易状态：<span id="payStatus">已成功</span></p>
+			</li>
+		</ul>
+	</section>
+	<section id="err"></section>
+	<a id="backpage" href="retuenMainApp">返回</a>
+<script>
+	var JsRequest ={
+		$ : function(){
+			var obj = {};
+			var url=decodeURI(location.search); //获取url中"?"符后的字串
+			obj.theRequest=new Object();
+			obj.refresh=function(){
+				obj.theRequest=new Object();
+				if (url.indexOf("?") != -1) {
+					var str = url.substr(1);
+					strs = str.split("&");
+					
+					for (var i = 0; i < strs.length; i++) {
+						obj.theRequest[strs[i].split("=")[0]] = unescape(strs[i].split("=")[1]);
+					}
+				}
+			}
+			obj.get=function(name){
+				var v=obj.theRequest[name]; 
+				if(typeof(v) == "undefined" || v==null)
+					v="";
+				return v;
+			}
+			obj.getContextPath=function(){
+				var pathName = document.location.pathname;
+				var index = pathName.substr(1).indexOf("/");
+			    var result = pathName.substr(0,index+1);
+			    return result;
+			}
+			obj.refresh();
+			return obj;
+		}
+		
+	};
+	var staus=JsRequest.$();
+	var errDom =document.querySelector("#err");
+	var sucDom =document.querySelector("#suc");
+	var statusPic =document.querySelector("#statusPic");
+	var statusText =document.querySelector("#statusText");
+	var errText =document.querySelector("#errText");
+	if (staus.get("status")==="3") {
+		statusPic.setAttribute("src","err.png");
+		statusText.innerHTML="支付失败";
+		statusText.style.cssText="color:#999";
+		sucDom.style.cssText="display:none";
+		errDom.style.cssText="display:block";
+		//失败原因
+		errDom.innerHTML=staus.get("msg");//"失败原因"
+	}else if(staus.get("status")==="2"||staus.get("status")==="4"){
+	     var accNo=staus.get("accNo");
+		 var accName=staus.get("accName");
+		 var amount=staus.get("amount");
+		 var orderTime=staus.get("orderTime");
+		 var orderId=staus.get("orderId");
+		 document.getElementById("accNo").innerText=accNo;
+		 document.getElementById("accName").innerText=accName;
+		 document.getElementById("amount").innerText=amount;
+		 document.getElementById("orderTime").innerText=orderTime;
+		 document.getElementById("orderId").innerText=orderId;
+		 if(staus.get("status")==="4"){
+			statusPic.setAttribute("src","wait.png");
+			statusText.innerHTML="支付中";
+			document.getElementById("payStatus").innerText="支付中";
+			errDom.style.cssText="display:none";
+			sucDom.style.cssText="display:block";
+		 }else{
+			statusPic.setAttribute("src","cus.png");
+			statusText.innerHTML="支付成功";
+			document.getElementById("payStatus").innerText="已成功";
+			errDom.style.cssText="display:none";
+			sucDom.style.cssText="display:block";
+		 }
+	} else if(staus.get("status")==="5"){
+		location.href='retuenMainApp';
+	}
+</script>
+</body>
+</html>

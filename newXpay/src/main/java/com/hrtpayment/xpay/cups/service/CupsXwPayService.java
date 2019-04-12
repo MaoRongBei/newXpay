@@ -36,6 +36,8 @@ public class CupsXwPayService {
 //	String aesKey; 
 	@Value("${cups.wx.callback.aesKey}")
 	String callBackAesKey;
+	@Value("${xpay.special.unno}")
+	String specialUnno;
 //	@Value("${cups.wx.expandCode}")
 //	String expandCode;
 //	@Value("${cups.xw.getQrcodeUrl}")
@@ -83,10 +85,14 @@ public class CupsXwPayService {
 			   if(notifySignatrueValue.equals(validteSignResult)){
 				   logger.info("[银联小微商户]验证签名成功");
 				   try {
-					   String getMidSql=" SELECT hrt_mid FROM HRT_MERBANKSUB where hrid in ( select HRID from bank_merregister where merchantcode=? and status='1' and approvestatus='Y') and status='1'";
+					   String getMidSql=" select  hrt_mid ,unno from hrt_merchacc  where hrt_mid =(SELECT hrt_mid FROM HRT_MERBANKSUB where hrid  = ( select HRID from bank_merregister where merchantcode=? and status='1' and approvestatus='Y') and status='1')";
 					   List<Map<String, Object>> midList=dao.queryForList(getMidSql, notifyMap.get("mchntCd"));
 					   
-					   String hrt_mid=(String) midList.get(0).get("hrt_mid");
+					   String hrt_mid=String.valueOf( midList.get(0).get("hrt_mid"));
+					   String unno=String.valueOf( midList.get(0).get("unno"));
+					   if (!specialUnno.contains(unno)) {
+						 unno="880000";
+					   }
 					   String insertSql = "insert into pg_wechat_txn (pwid,fiid, txntype,mer_orderid,bk_orderid,detail, txnamt, mer_id,"
 								+ " bankmid,time_end,respcode,respmsg,status, cdate, lmdate,qrcode,settlekey,accno,unno,mer_tid,bank_type,trantype) values"
 								+ "(S_PG_Wechat_Txn.nextval,?,'0',?,?,?,?,?,?,?,?,?,'1',sysdate,sysdate,?,?,?,?,?,'XW','9')";
@@ -94,13 +100,14 @@ public class CupsXwPayService {
 						int count=dao.update(insertSql,52,orderNo ,notifyMap.get("transSeqId") ,notifyMap.get("mchntNm"), amt, hrt_mid,
 								notifyMap.get("mchntCd"),notifyMap.get("transTm"),notifyMap.get("respCode"),notifyMap.get("respMsg"), 
 								notifyMap.get("qrVoucherNum"), notifyMap.get("settleKey"),
-								notifyMap.get("accNo"),"880000",null);
+								notifyMap.get("accNo"),unno,null);
 						
 						if (count==1) {
 							String getOrderSql="select * from pg_wechat_txn where mer_orderid=?";
 							List<Map<String, Object>> orderList=dao.queryForList(getOrderSql, orderNo);
 							Map<String, Object > orderMap=orderList.get(0);
 							orderMap.put("TXNLEVEL", BigDecimal.ONE);
+							orderMap.put("payOrderTime", orderMap.get("LMDATE"));
 							notify.sendNotify(orderMap);	
 							logger.info("[银联小微商户]异步通知   订单{}添加成功",orderNo);
 						}else {

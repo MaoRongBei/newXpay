@@ -92,45 +92,57 @@ public class CupsATPayController {
 		return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><xml><return_code>SUCCESS</return_code><return_msg>OK</return_msg></xml>";
 	}
 
-//	
-//	@RequestMapping("cupUpdatesAliMerchant")
-//	@ResponseBody
-//	public void cupUpdatesAliMerchant(@RequestParam String hrid){
-//		 try {
-//			 cupsMerchantService.updateAliMerchants(hrid) ;
-//		} catch (BusinessException e) {
-//		    logger.info("[银联-支付宝]商户入驻修改    处理异常{}",e.getMessage());
-//		}
-//	}
+	@RequestMapping("cupUpdatesAliMerchant")
+	@ResponseBody
+	public void cupUpdatesAliMerchant(HttpServletRequest request){
+		 Map<String,String> requestMap = new HashMap<String,String>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户通知信息  -接收到的消息:{}",requestMap);
+
+		 if ("".equals(requestMap.get("merchantid"))) {
+			 logger.info("[银联-支付宝]商户入驻修改    处理异常 merchantid 为空{}");
+			return ;
+		 }
+		 try {
+			 cupsMerchantService.updateAliMerchants(requestMap.get("merchantid")) ;
+		} catch (BusinessException e) {
+		    logger.info("[银联-支付宝]商户入驻修改    处理异常{}",e.getMessage());
+		}
+	}
 
 	
-	@RequestMapping("cupAliClosed")
-	@ResponseBody
-	public void cupAliClosed(@RequestParam String orderid){
-		 try {
-			 cupsPayService.cupsAliClosed(orderid);
-		} catch (BusinessException e) {
-		    logger.info("[银联-支付宝]订单关闭    处理异常{}",e.getMessage());
-		}
-	}
+//	@RequestMapping("cupAliClosed")
+//	@ResponseBody
+//	public void cupAliClosed(@RequestParam String orderid){
+//		 try {
+//			 cupsPayService.cupsAliClosed(orderid);
+//		} catch (BusinessException e) {
+//		    logger.info("[银联-支付宝]订单关闭    处理异常{}",e.getMessage());
+//		}
+//	}
 	
-	@RequestMapping("cupAliCancel")
-	@ResponseBody
-	public void cupAliCancel(@RequestParam String orderid){
-		 try { 
-			 cupsPayService.cupsAliCancel(orderid);
-		} catch (BusinessException e) {
-		    logger.info("[银联-支付宝]订单撤销    处理异常{}",e.getMessage());
-		}
-	}
+//	@RequestMapping("cupAliCancel")
+//	@ResponseBody
+//	public void cupAliCancel(@RequestParam String orderid,@RequestParam String channel_id){
+//		 try { 
+//			 cupsPayService.cupsAliCancel(orderid,channel_id);
+//		} catch (BusinessException e) {
+//		    logger.info("[银联-支付宝]订单撤销    处理异常{}",e.getMessage());
+//		}
+//	}
 	
 	
 	
 //	@RequestMapping("cupWxCancel")
 //	@ResponseBody
-//	public void cupWxCancel(@RequestParam String bankmid, @RequestParam String orderid){
+//	public void cupWxCancel(@RequestParam String bankmid, @RequestParam String orderid,String mchId,String channelId){
 //		 try {
-//			 cupsPayService.cupsWxCancel (bankmid,orderid);
+//			 cupsPayService.cupsWxCancel (bankmid,orderid,mchId,channelId);
 //		} catch (BusinessException e) {
 //		    logger.info("[银联-支付宝]订单关闭    处理异常{}",e.getMessage());
 //		}

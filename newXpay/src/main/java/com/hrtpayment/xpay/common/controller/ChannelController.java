@@ -39,10 +39,13 @@ public class ChannelController {
 	ManageService manageService;
 	@Autowired
 	CupsPayService cupsPayService;
+    
+	@Value("${xpay.special.unno}")
+	String specUnno;
 	
-	@Value("dae.unno") 
+	@Value("${dae.unno}") 
 	private String daeUnno;
-
+    
 	/**
 	 * 二维码
 	 * @param xml
@@ -51,9 +54,11 @@ public class ChannelController {
 	@RequestMapping("hrtpay")
 	@ResponseBody
 	public HrtPayXmlBean hrtpay(@RequestBody HrtPayXmlBean bean) {
+		logger.info("通道商扫码支付:{}：{}",bean.getOrderid(),bean.getArea());
 		
 		String payway = bean.getPayway();
 		String unno = bean.getUnno();
+		
 		BigDecimal amount = null;
 		try{
 			amount = new BigDecimal(bean.getAmount());
@@ -79,9 +84,10 @@ public class ChannelController {
 			 * 单笔，单户单日限额
 			 */
  
-			if(!"QBPAY".equals(payway)&&!"880000".equals(unno)&&!"962073".equals(unno)){
+//			if(!"QBPAY".equals(payway)&&!"880000".equals(unno)&&!"962073".equals(unno)){
+			if(!"QBPAY".equals(payway)&&!specUnno.contains(unno)&&!unno.contains(daeUnno)){
 				manageService.addDayMerAmt(bean.getMid(),amount.doubleValue() );
-			}else if(unno.contains(daeUnno)){
+			}else if(daeUnno.contains(unno)){
 				/*
 				 * 2018-11-27 修改
 				 * 
@@ -137,7 +143,7 @@ public class ChannelController {
 	@RequestMapping("barcodepay")
 	@ResponseBody
 	public HrtPayXmlBean barcodepay(@RequestBody HrtPayXmlBean bean) {
-		logger.info("通道商条码支付:{}",bean.getOrderid());
+		logger.info("通道商条码支付:{}：{}",bean.getOrderid(),bean.getArea());
 		String key = null;
 		try {
 			key = ch.checkChannelInfo(bean);
@@ -172,7 +178,8 @@ public class ChannelController {
              * 判断并累增 成功失败的交易额度 都会算在 日限额内
              * 
              */
-			if(!"880000".equals(bean.getUnno())&&!"962073".equals(bean.getUnno())){
+//			if(!"880000".equals(bean.getUnno())&&!"962073".equals(bean.getUnno())){
+			if(!specUnno.contains(bean.getUnno())){
 				manageService.addDayMerAmt(bean.getMid(),amount.doubleValue() );
 			}else if(bean.getUnno().contains(daeUnno)){
 				/*
@@ -186,9 +193,13 @@ public class ChannelController {
 			}
 			bean.setPayOrderTime(new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()));
 			String status = smzf.barcodePay(bean);
+			if ("110000".equals(bean.getUnno())) {
+				bean.setPayOrderTime(new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()));
+			}
 			bean.setStatus(status);
 			logger.info("[条码支付]机构号{}，订单号：{}，返回状态status={}",bean.getUnno(),bean.getOrderid(),bean.getStatus());
-			if(("S".equals(status)&& "880000".equals(bean.getUnno()))||("S".equals(status)&& "962073".equals(bean.getUnno()))){
+//			if(("S".equals(status)&& "880000".equals(bean.getUnno()))||("S".equals(status)&& "962073".equals(bean.getUnno()))){
+			if("S".equals(status)&& specUnno.contains(bean.getUnno())){
 				manageService.addDayMerAmtForLMF(bean.getMid(),amount.doubleValue());
 			}
 			if ("E".equals(status)) {
@@ -215,7 +226,12 @@ public class ChannelController {
 		logger.info("[通道查询订单]订单号：{}",bean.getOrderid());
 		String key = null;
 		try {
-			key = ch.checkChannelInfo(bean);
+			if("130000".equals(bean.getUnno())){
+				Map< String, Object> tidInfo = ch.checkChannelInfoForSyt(bean);
+				key=String.valueOf(tidInfo.get("MACKEY"));
+			}else {
+				key = ch.checkChannelInfo(bean);
+			}
 			ch.queryOrder(bean);
 		} catch (BusinessException e) {
 			logger.info(e.getMessage());
@@ -233,6 +249,64 @@ public class ChannelController {
 		logger.info("[通道查询订单]订单号：{}返回：{}", bean.getOrderid(), bean.getStatus());
 		return bean;
 	}
+	
+	@RequestMapping("hrtcloseorder")
+	@ResponseBody
+	public HrtPayXmlBean closeorder(@RequestBody HrtPayXmlBean bean) {
+		logger.info("[通道关闭订单]订单号：{}",bean.getOrderid());
+		String key = null;
+		try {
+			key = ch.checkChannelInfo(bean);
+			ch.closeOrder(bean);
+		} catch (BusinessException e) {
+			logger.info(e.getMessage());
+			bean.setStatus("E");
+			bean.setErrdesc(e.getMessage());
+			return bean;
+		}
+		if(key!=null) {
+			try {
+				bean.setSign(SimpleXmlUtil.getMd5Sign(ch.beanToMap(bean), key));
+			} catch (BusinessException e) {
+				logger.error("响应签名异常",e);
+			}
+		}
+		logger.info("[通道关闭订单]订单号：{}返回：{}", bean.getOrderid(), bean.getStatus());
+		return bean;
+	}
+	
+	/**
+	 * 
+	 * 订单撤销接口
+	 * 
+	 * @param xml
+	 * @return
+	 */
+	@RequestMapping("hrtcancelorder")
+	@ResponseBody
+	public HrtPayXmlBean cancelOrder(@RequestBody HrtPayXmlBean bean) {
+		logger.info("[通道撤销订单]订单号：{}",bean.getOrderid());
+		String key = null;
+		try {
+			key = ch.checkChannelInfo(bean);
+			ch.cancelOrder(bean);
+		} catch (BusinessException e) {
+			logger.info(e.getMessage());
+			bean.setStatus("E");
+			bean.setErrdesc(e.getMessage());
+			return bean;
+		}
+		if(key!=null) {
+			try {
+				bean.setSign(SimpleXmlUtil.getMd5Sign(ch.beanToMap(bean), key));
+			} catch (BusinessException e) {
+				logger.error("[通道撤销订单]响应签名异常",e);
+			}
+		}
+		logger.info("[通道撤销订单]订单号：{}返回：{}", bean.getOrderid(), bean.getStatus());
+		return bean;
+	}
+	
 	
 	/**
 	 * 银联二维码(银行卡前置模式)主扫模式

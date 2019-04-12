@@ -109,7 +109,8 @@ public class JspayController {
 		}
 		
 		try {
-			String QrCode = service.getPayUrl(null, bean.getMid(), bean.getAmount(), bean.getSubject(),  bean.getPayway(),bean.getQrtid());
+//			String QrCode = service.getPayUrl(null, bean.getMid(), bean.getAmount(), bean.getSubject(),  bean.getPayway(),bean.getQrtid());
+			String QrCode = service.getPayUrl(bean);
 			bean.setQrCodeUrl(QrCode);
 			bean.setStatus("0");
 			return bean;

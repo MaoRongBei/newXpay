@@ -13,7 +13,7 @@ public interface WxpayService {
 	 * @param orderid
 	 * @return
 	 */
-	String getWxpayPayInfo(String orderid,String openid);
+	String getWxpayPayInfo(String orderid,String openid,String isCredit);
 	String getWxpaySecret();
 	int getWxpayFiid();
 

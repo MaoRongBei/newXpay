@@ -1,0 +1,366 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>支付</title>
+<link rel="stylesheet"
+	href="http://cdn.bootcss.com/weui/0.4.3/style/weui.css">
+<style>
+* {
+	margin: 0;
+	padding: 0;
+}
+
+/*input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+	-webkit-appearance: none !important;
+	appearance: none !important;
+	margin: 0;
+}*/
+html {
+	font-size: 62.5%;
+}
+
+body {
+	background-color: #fff;
+	font-family: "微软雅黑";
+	background-color: #F9F9F9;
+}
+
+.header {
+	background-color: #fe6732;
+	box-shadow: 1px 1px 3px #795E5E;
+}
+
+.header a {
+	float: left;
+}
+
+.header img {
+	height: 2.5rem;
+	margin-top: 1rem;
+}
+
+.header h3 {
+	margin-left: 38%;
+	font-size: 2rem;
+	line-height: 5rem;
+	/*text-align: center;*/
+	color: #020202;
+}
+
+.main {
+	margin: 10px;
+}
+
+.main li {
+	list-style: none;
+}
+
+.main li:first-child {
+	text-align: center;
+	font-size: 1.8rem;
+	color: #303030;
+}
+
+.main li:last-child {
+	border: none;
+	font-size: 1.6rem;
+	padding-left: 1rem;
+	line-height: 6rem;
+	background-color: #fff;
+}
+
+.main li h4 {
+	font-size: 20px;
+    color: #303030;
+    line-height: 4rem;
+    color: #ff5613;
+    font-weight: normal;
+}
+
+.main input {
+	border: none;
+	font-size: 4rem;
+	width: 72%;
+	background-color: #fff;
+	line-height: 4rem;
+	text-indent: 1rem;
+	font-weight: bold;
+	color: #404040;
+}
+
+.main label {
+	width: 28%;
+	display: inline-block;
+}
+
+.mainTop {
+	width: 100%;
+	margin-bottom: 5rem;
+}
+.mainBottom {
+	width: 85%;
+	margin: 0 auto;
+}
+
+#del {
+	background: url(hrt_x.png) no-repeat center;
+	height: 2.5em;
+}
+
+.logo {
+	width: 20px;
+	float: left;
+	padding-right: 12px;
+}
+
+.weui_cells_title {
+	width: 165px;
+}
+
+.num {
+	width: 100%;
+	position: fixed;
+	bottom: 0;
+}
+
+.num table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 2em;
+	line-height: 2em;
+}
+
+.num table tr td {
+	text-align: center;
+	border: 1px solid #ddd;
+}
+
+.weui_btn {
+	border-radius: 0;
+	line-height: 3em;
+}
+
+button {
+	width: 100%;
+	line-height: 2.5em;
+	font-size: 1em;
+	border: 0;
+	background-color: #F9F9F9;
+}
+
+.numClick {
+	background-color: #F9F9F9;
+	animation: myColor .2s;
+}
+
+.numw {
+	background-color: #04BE02;
+	animation: myColort .2s;
+}
+.weui_cells:before,.weui_cells:after{
+	border: 0;
+}
+.weui_cells {
+    background-color: #FFFFFF;
+    line-height: 1.41176471;
+    font-size: 18px;
+    overflow: hidden;
+    position: relative;
+    width: 90%;
+    margin: 1.17647059em auto 0;
+    border: solid 1px #D9D9D9;
+    border-radius: 8px;
+}
+.weui_cell {
+    padding: 20px 15px;
+}
+.weui_input{
+	text-align: right;
+}
+input::-webkit-input-placeholder{
+ 	text-align: right;
+ }
+#qrcode{
+	width: 71% !important;
+    margin: 15%  auto !important;
+}
+#qrcode #warpC{
+	width: 302px;
+	height: 379px;
+	position: absolute;
+	top: 0;
+	opacity:0;
+}
+</style>
+<script src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
+
+<script type="text/javascript">
+	var LocString = String(window.document.location.href);
+
+	function GetQueryString(str) {
+		var rs = new RegExp("(^|)" + str + "=([^&]*)(&|$)", "gi")
+				.exec(LocString), tmp;
+		if (rs)
+			return rs[2];
+		else
+			return rs;
+	}
+	var mid = GetQueryString("mid");
+
+	function post(url, data, callback) {
+		var xmlhttp;
+		if (window.XMLHttpRequest) {// code for IE7+, Firefox, Chrome, Opera, Safari
+			xmlhttp = new XMLHttpRequest();
+		} else {// code for IE6, IE5
+			xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+		}
+		xmlhttp.onreadystatechange = function() {
+			if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+				callback(xmlhttp.responseText);
+			}
+		}
+		xmlhttp.open("POST", url, true);
+		xmlhttp.setRequestHeader("Content-Type","application/json");
+		xmlhttp.send(data);
+	}
+	function queryMerName() {
+		post("querymername?mid="+mid, "", function(merName) {
+			if (null==merName || String(merName).length < 1) {
+				alert("无效商户号");
+				WeixinJSBridge.call('closeWindow');
+			}
+			document.getElementById("merNameH").innerHTML = merName;
+		})
+	}
+	function getPayUrl(mid,amount) {
+		post("getjspayurl",'{"mid":"'+mid+'","amount":"'+amount+'","payway":"WXPAY"}',function(resp){
+			resp = eval("(" + resp + ")");
+			if (resp.status==0) {
+				window.location.assign(resp.qrCodeUrl);
+			} else alert(resp.msg);
+		});
+	}
+	function buildOrder(){
+		var amount = document.getElementById("sumMoneyText").value;
+		if (amount.match(/\d+\.?\d*/) && new Number(amount) > 0) {
+			$('#sub').attr('disabled',"true");
+			$('#sumMoneyText').attr('disabled',"true");
+			getPayUrl(mid,amount);
+		} else {
+			alert("请输入正确金额");
+		}
+	}
+</script>
+</head>
+
+<body onload="queryMerName();">
+	<div id="div">
+		<div class="main">
+			<ul>
+				<li><h4 id="merNameH"></h4></li>
+				<li></li>
+			</ul>
+		</div>
+	</div>
+
+	<div id="container" class="container">
+		<div class="weui_cells weui_cells_form">
+			<div class="weui_cell">
+				<div class="weui_cell_hd">
+					<label class="weui_label">金额</label>
+				</div>
+				<div class="weui_cell_bd weui_cell_primary">
+					<input readonly="readonly" id="sumMoneyText" class="weui_input"
+						step="0.01" pattern="[0-9.]*" placeholder="请输入消费金额" type="text">
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div id="hyb" class="weui_cells_title" style="float: right;">
+		<div>
+			<img class="logo" src="hrt_hyb.png">
+		</div>
+		会员宝提供技术支持
+	</div>
+
+	<div id="cal" class="num">
+		<table>
+			<tr>
+				<td><button class="number" value="1">1</button></td>
+				<td><button class="number" value="2">2</button></td>
+				<td><button class="number" value="3">3</button></td>
+			</tr>
+			<tr>
+				<td><button class="number" value="4">4</button></td>
+				<td><button class="number" value="5">5</button></td>
+				<td><button class="number" value="6">6</button></td>
+			</tr>
+			<tr>
+				<td><button class="number" value="7">7</button></td>
+				<td><button class="number" value="8">8</button></td>
+				<td><button class="number" value="9">9</button></td>
+			</tr>
+			<tr>
+				<td class="del"><button id="del"></button></td>
+				<td><button class="number" value="0">0</button></td>
+				<td><button class="number" value=".">.</button></td>
+			</tr>
+		</table>
+		<!-- <div class="weui_btn_area">
+		<button disabled="disabled" id="sub" type="submit" class="weui_btn weui_btn_primary" value="确定支付" onclick="buildOrder()">确定支付</button>
+		</div> -->
+		<div>
+			<button id="sub" type="submit"
+				class="weui_btn weui_btn_primary" value="确定支付"
+				onclick="buildOrder()">确定支付</button>
+		</div>
+	</div>
+</body>
+<script src="http://cdn.bootcss.com/zepto/1.1.6/zepto.min.js"></script>
+<script>
+	var num1 = "";
+	var num2 = "";
+	var input = "";
+	$(".number").on(
+			"touchstart",
+			function() {
+				if (input == "") {
+					num1 += $(this).val();
+					$("#sumMoneyText").val(num1);
+				} else {
+					num2 += $(this).val();
+					$("#sumMoneyText").val(num2);
+				};
+				var inputVal = $("#sumMoneyText").val();
+				inputTest = $("#sumMoneyText").val(
+						inputVal.replace(/^\./g, '').replace(/(\..*)\./g, '$1')
+								.replace('.', '$#$').replace(/00\./g, '0\.')
+								.replace('$#$', '.').replace(
+										/^(\-)*(\d+)\.(\d\d).*$/, '$1$2.$3'));
+
+			});
+
+	$("#del").on("touchstart", function() {
+		$("#sumMoneyText").val(" ");
+		num1 = "";
+		num2 = "";
+		input = "";
+	})
+	$('#del,.number').on('touchstart', function() {
+		$(this).css("background-color", "#04BE02")
+	});
+	$('#del,.number').on('touchend', function() {
+		$(this).css("background-color", "#F9F9F9")
+	});
+	$('#sub').on('touchstart', function() {
+		$(this).css("background-color", "#F9F9F9")
+	});
+	$('#sub').on('touchend', function() {
+		$(this).css("background-color", "#04BE02")
+	});
+</script>
+</html>

@@ -695,7 +695,7 @@ public class CibPayService implements WxpayService {
 	 * 调起公众号支付
 	 */
 	@Override
-	public String getWxpayPayInfo(String orderid, String openid) {
+	public String getWxpayPayInfo(String orderid, String openid,String isCredit) {
 		try {
 			CibMsg resp = getcibResp(orderid, openid);
 			if (resp.getPay_info() != null) {

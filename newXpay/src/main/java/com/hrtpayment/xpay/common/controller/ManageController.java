@@ -2,11 +2,15 @@ package com.hrtpayment.xpay.common.controller;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
+import javax.servlet.http.HttpServletRequest; 
 import com.alibaba.fastjson.JSONObject;
+import com.alipay.api.FileItem;
 import com.hrtpayment.xpay.channel.service.ChannelService;
 import com.hrtpayment.xpay.utils.DateUtil;
+import com.hrtpayment.xpay.utils.HttpConnectService;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -187,6 +191,36 @@ public class ManageController {
 		}
 	}
 	
+	@RequestMapping("closeOrder")
+	@ResponseBody
+	public String closeOrder(@RequestParam String orderid) {
+		try{
+			String status = service.closeOrder(orderid);
+			logger.info("[订单关闭]订单号{}，状态{}",orderid,status);
+			return status;
+		}catch(HrtBusinessException e) {
+			logger.info("{}关闭订单结果:{}",orderid,e.getMessage());
+			return e.getMessage();
+		}catch(RuntimeException e) {
+			return e.getMessage();
+		}
+	}
+	
+	@RequestMapping("cancelOrder")
+	@ResponseBody
+	public String cancelOrder(@RequestParam String orderid) {
+		try{
+			String status = service.cancelOrder(orderid);
+			logger.info("[订单撤销]订单号{}，状态{}",orderid,status);
+			return status;
+		}catch(HrtBusinessException e) {
+			logger.info("{}撤销订单结果:{}",orderid,e.getMessage());
+			return e.getMessage();
+		}catch(RuntimeException e) {
+			return e.getMessage();
+		}
+	}
+	
 	@RequestMapping("/createmer")
 	@ResponseBody
 	public String createmer(@RequestBody String content){
@@ -202,6 +236,108 @@ public class ManageController {
 		}
 		return "OK";
 	}
+	
+	@RequestMapping("/uploadspecialimagemer")
+	@ResponseBody
+	public String uploadSpecialImageMer(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+		 Map<String,Object> requestMap = new HashMap<String,Object>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]照片上送接口  -接收到的消息:{}");//,requestMap
+		 String jsonMsg=bankMer.uploadImage(requestMap);
+		 return  jsonMsg;
+	}
+	
+	@RequestMapping("/applyspecialmerForQuarz")
+	@ResponseBody
+	public String applyspecialmerForQuarz(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+		 Map<String,Object> requestMap = new HashMap<String,Object>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户申请  -接收到的消息:{}",requestMap);
+
+		 String jsonMsg=bankMer.applySpecialMer(requestMap);
+	  
+		 return  jsonMsg;
+	}
+	
+	@RequestMapping("/applyspecialmer")
+	@ResponseBody
+	public String applyspecialmer(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+		 Map<String,Object> requestMap = new HashMap<String,Object>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户申请  -接收到的消息:{}",requestMap);
+
+		 String jsonMsg=bankMer.applySpecialMer(requestMap);
+	  
+		 return  jsonMsg;
+	}
+	
+	@RequestMapping("/confirmspecialmer")
+	@ResponseBody
+	public String confirmSpecialMer(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+		 Map<String,Object> requestMap = new HashMap<String,Object>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户确认  -接收到的消息:{}",requestMap);
+
+		 String jsonMsg=bankMer.confirmSpecialMer(requestMap);
+		 return  jsonMsg;
+	}
+	
+	@RequestMapping("/activityCallback")
+	@ResponseBody
+	public String activityCallback(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+
+		 Map<String,String> requestMap = new HashMap<String,String>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户通知信息  -接收到的消息:{}",requestMap);
+		 bankMer.applyCallBackMsg(requestMap);
+		 return "SUCCESS";
+	}
+	
+
+	@RequestMapping("/queryspecialstatus")
+	@ResponseBody
+	public String querySpecialStatus(HttpServletRequest request){//Param String merchantcode,@RequestParam byte[] image,@RequestParam String imageName,@RequestParam String  image_type
+		 Map<String,Object> requestMap = new HashMap<String,Object>();
+		 Enumeration<String> parameterEnum = request.getParameterNames();
+		 
+		 while(parameterEnum.hasMoreElements()){
+			 String keyName = parameterEnum.nextElement();
+			 requestMap.put(keyName, request.getParameter(keyName));
+		 }
+		 logger.info("[和融通-特殊商户报备]特殊商户报备状态查询  -接收到的消息:{}",requestMap);
+
+		 String jsonMsg=bankMer.confirmSpecialMer(requestMap);
+		 return  jsonMsg;
+	}
+	
+	
+	
+	
+	
 	
 	@RequestMapping("/createsubmer")
 	@ResponseBody

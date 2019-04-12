@@ -53,9 +53,9 @@ public class WechatController {
 	 * @param code
 	 * @return
 	 */
-	@RequestMapping("wxpay_{fiid:[0-9]+}_{orderid}")
+	@RequestMapping("wxpay_{fiid:[0-9]+}_{orderid}_{isCredit}")
 	@ResponseBody
-	public String pay(@PathVariable int fiid,@PathVariable String orderid,@RequestParam String code) {
+	public String pay(@PathVariable int fiid,@PathVariable String orderid,@PathVariable String isCredit,@RequestParam String code) {
 		logger.info("获取微信code:"+code+" 订单号："+orderid);
 		StringBuilder sb = new StringBuilder();
 		sb.append("<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">");
@@ -65,20 +65,22 @@ public class WechatController {
 		try{
 			String openid = wechat.getOpenid(fiid, code);
 			logger.info("获取微信opeind完成-------->"+fiid+"订单号："+orderid+" openid:"+openid);
-			String payinfo = wechat.getJsPayInfo(fiid,orderid,openid);
+			String payinfo = wechat.getJsPayInfo(fiid,orderid,openid,isCredit);
 			sb.append("var onBridgeReady = function() {	WeixinJSBridge.invoke('getBrandWCPayRequest',JSON.parse('");
 			sb.append(payinfo);
 			sb.append("'),function(res) {   if (res.err_msg == \"get_brand_wcpay_request：ok\"	|| res.err_msg == \"get_brand_wcpay_request:ok\")");
 			/**
 			 * 880000 立码富交易跳转到他们的指定页面上 	
 			 */
-			if (!"88000020".equals(orderid.substring(0,8))&&!"96207320".equals(orderid.substring(0,8))) {//880000
+			if (!"88000020".equals(orderid.substring(0,8))&&!"96207320".equals(orderid.substring(0,8))&&!"11212120".equals(orderid.substring(0,8))) {//880000
 				sb.append("{WeixinJSBridge.call('closeWindow');}  else {	alert('支付失败，请重新支付！'); WeixinJSBridge.call('closeWindow');	}	});	};");
 			}else{
 				if("88000020".equals(orderid.substring(0,8))){
 					sb.append("{window.location.href='https://xpay.hybunion.cn/HYBComboPayment/successPageRedirect.do?orderNo="+orderid+"'}  else {	alert('支付失败，请重新支付！'); WeixinJSBridge.call('closeWindow');	}	});	};");
 				}else if("96207320".equals(orderid.substring(0,8))){
 					sb.append("{window.location.href='https://xpay.yrmpay.com/YRMComboPayment/successPageRedirect.do?orderNo="+orderid+"'}  else {	alert('支付失败，请重新支付！'); WeixinJSBridge.call('closeWindow');	}	});	};");
+				}else if("11212120".equals(orderid.substring(0,8))){
+					sb.append("{window.location.href='https://xpay.hybunion.cn/LMFComboPayment/successPageRedirect.do?orderNo="+orderid+"&state=0'}  else {	alert('支付失败，请重新支付！'); window.location.href='https://xpay.hybunion.cn/LMFComboPayment/successPageRedirect.do?orderNo="+orderid+"&state=1';	}	});	};");
 				}
 			}
 			sb.append("if (typeof WeixinJSBridge == \"undefined\") {if (document.addEventListener)");
